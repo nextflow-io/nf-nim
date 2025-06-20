@@ -30,10 +30,14 @@ This is a Nextflow plugin for integrating NVIDIA NIMs (NVIDIA Inference Microser
 
 #### Executor Implementation
 When implementing custom executors:
-- Extend `nextflow.executor.Executor` class
-- Implement `org.pf4j.ExtensionPoint` interface
-- Use `@ServiceName('executor-name')` annotation
-- Register in extension points in build.gradle
+- Extend `nextflow.executor.Executor` class for custom, non-grid behavior. For an example of a grid-based executor, see how `HyperQueueExecutor` extends `AbstractGridExecutor`. The current [NIMExecutor.groovy](mdc:src/main/groovy/seqeralabs/plugin/NIMExecutor.groovy) extends `Executor`.
+- When extending `Executor` directly, you **must** implement the `createTaskMonitor()` method. The `NIMExecutor` uses a `TaskPollingMonitor`.
+- **`TaskPollingMonitor` Creation**: Use the static factory method `TaskPollingMonitor.create(session, name, pollInterval)`. The `pollInterval` argument requires a `nextflow.util.Duration` object (e.g. `Duration.of('5sec')`).
+- **Handling `Duration` types**: Be mindful of import conflicts between `nextflow.util.Duration` and `java.time.Duration`. If both are needed, use a Groovy alias: `import java.time.Duration as JavaDuration`.
+- **Task Handler Communication**: The `NIMTaskHandler` needs to communicate with the `NIMExecutor`. Fields in `NIMExecutor` that `NIMTaskHandler` needs to access (like `httpClient` and `nimEndpoints`) should not be `private`. Making them package-private (Groovy's default) is a viable solution.
+- Implement `org.pf4j.ExtensionPoint` interface.
+- Use `@ServiceName('executor-name')` annotation.
+- Register in extension points in build.gradle.
 
 #### Extension Functions
 - Use `@Function` annotation for custom pipeline functions
