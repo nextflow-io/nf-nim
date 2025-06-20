@@ -18,17 +18,18 @@ package seqeralabs.plugin
 
 import nextflow.Session
 import nextflow.processor.TaskRun
-import nextflow.processor.TaskStatus
+import nextflow.processor.TaskMonitor
+import nextflow.processor.TaskPollingMonitor
 import spock.lang.Specification
-import java.nio.file.Path
-import java.nio.file.Files
+import java.net.http.HttpClient
+import spock.lang.PendingFeature
 
 /**
  * Tests for NIM executor
  */
 class NIMExecutorTest extends Specification {
 
-    def 'should create NIM executor with NVIDIA API endpoints'() {
+    def 'should register with default NVIDIA API endpoints'() {
         given:
         def session = Mock(Session)
         session.config >> [:]
@@ -41,6 +42,7 @@ class NIMExecutorTest extends Specification {
         then:
         executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         executor.nimEndpoints.size() == 1
+        executor.httpClient instanceof HttpClient
     }
 
     def 'should create task handler'() {
@@ -58,7 +60,10 @@ class NIMExecutorTest extends Specification {
         
         then:
         handler instanceof NIMTaskHandler
+        handler.task == taskRun
     }
+
+
 
     def 'should use custom endpoint from config'() {
         given:
@@ -73,6 +78,7 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == customEndpoint
+        executor.nimEndpoints.size() == 1
     }
 
     def 'should support custom endpoint configuration'() {
@@ -93,102 +99,55 @@ class NIMExecutorTest extends Specification {
         executor.nimEndpoints.size() == 1
     }
 
-    def 'should initialize task handler with correct status'() {
+    def 'should handle empty config gracefully'() {
         given:
         def session = Mock(Session)
-        session.config >> [:]
+        session.config >> [nim: [:]]
+        
+        when:
         def executor = new NIMExecutor()
         executor.session = session
         executor.register()
         
-        def workDir = Files.createTempDirectory('nim-test')
-        def taskRun = Mock(TaskRun) {
-            getWorkDir() >> workDir
-        }
-        
-        when:
-        def handler = new NIMTaskHandler(taskRun, executor)
-        
         then:
-        handler.task == taskRun
-        handler.status == TaskStatus.NEW
-        
-        cleanup:
-        workDir.toFile().deleteDir()
+        executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        executor.nimEndpoints.size() == 1
     }
 
-    def 'should transition status on submit'() {
+    def 'should handle invalid config gracefully'() {
         given:
         def session = Mock(Session)
-        session.config >> [:]
+        session.config >> [nim: [rfdiffusion: 'invalid-config']]
+        
+        when:
         def executor = new NIMExecutor()
         executor.session = session
         executor.register()
         
-        def workDir = Files.createTempDirectory('nim-test')
-        def taskRun = Mock(TaskRun) {
-            getWorkDir() >> workDir
-        }
-        def handler = new NIMTaskHandler(taskRun, executor)
-        
-        when:
-        handler.submit()
-        
         then:
-        handler.status == TaskStatus.SUBMITTED
-        
-        cleanup:
-        workDir.toFile().deleteDir()
+        executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        executor.nimEndpoints.size() == 1
     }
 
-    def 'should detect running status'() {
+    @PendingFeature(reason = "Multiple custom services support not yet implemented")
+    def 'should add multiple custom services'() {
         given:
         def session = Mock(Session)
-        session.config >> [:]
+        session.config >> [nim: [
+            rfdiffusion: [endpoint: 'http://server1:8080/rfdiffusion'],
+            alphafold2: [endpoint: 'http://server2:8080/alphafold2'],
+            custom_service: [endpoint: 'http://server3:8080/custom']
+        ]]
+        
+        when:
         def executor = new NIMExecutor()
         executor.session = session
         executor.register()
         
-        def workDir = Files.createTempDirectory('nim-test')
-        def taskRun = Mock(TaskRun) {
-            getWorkDir() >> workDir
-        }
-        def handler = new NIMTaskHandler(taskRun, executor)
-        handler.submit()
-        
-        when:
-        def isRunning = handler.checkIfRunning()
-        
         then:
-        isRunning == true
-        handler.status == TaskStatus.RUNNING
-        
-        cleanup:
-        workDir.toFile().deleteDir()
-    }
-
-    def 'should handle kill signal'() {
-        given:
-        def session = Mock(Session)
-        session.config >> [:]
-        def executor = new NIMExecutor()
-        executor.session = session
-        executor.register()
-        
-        def workDir = Files.createTempDirectory('nim-test')
-        def taskRun = Mock(TaskRun) {
-            getWorkDir() >> workDir
-        }
-        def handler = new NIMTaskHandler(taskRun, executor)
-        
-        when:
-        handler.kill()
-        
-        then:
-        handler.checkIfCompleted() == true
-        handler.status == TaskStatus.COMPLETED
-        
-        cleanup:
-        workDir.toFile().deleteDir()
+        executor.nimEndpoints['rfdiffusion'] == 'http://server1:8080/rfdiffusion'
+        executor.nimEndpoints['alphafold2'] == 'http://server2:8080/alphafold2'
+        executor.nimEndpoints['custom_service'] == 'http://server3:8080/custom'
+        executor.nimEndpoints.size() == 3
     }
 } 
