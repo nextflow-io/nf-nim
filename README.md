@@ -32,21 +32,14 @@ plugins {
 
 ## Configuration
 
-Configure NIM service endpoints in your `nextflow.config`:
+The plugin uses NVIDIA's hosted API endpoints by default. You will need to set up authentication with NVIDIA API keys as described in the [NVIDIA NIM documentation](https://developer.nvidia.com/blog/a-simple-guide-to-deploying-generative-ai-with-nvidia-nim/).
 
-```groovy
-nim {
-    rfdiffusion {
-        endpoint = 'http://localhost:8000/biology/ipd/rfdiffusion/generate'
-    }
-    alphafold2 {
-        endpoint = 'http://localhost:8001/biology/deepmind/alphafold2/predict'
-    }
-    esmfold {
-        endpoint = 'http://localhost:8002/biology/meta/esmfold/predict'
-    }
-}
-```
+Default endpoints:
+- **RFDiffusion**: `https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate`
+- **AlphaFold2**: `https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict`
+- **ESMFold**: `https://api.nvidia.com/v1/biology/meta/esmfold/predict`
+
+> **Note**: Custom endpoint configuration will be supported in a future release.
 
 ## Usage
 
@@ -213,14 +206,16 @@ Test NIM service availability:
 
 ```bash
 # RFDiffusion
-curl -v https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate
+curl -v https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate
 
 # AlphaFold2  
-curl -v https://health.api.nvidia.com/v1/biology/deepmind/alphafold2/predict
+curl -v https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict
 
 # ESMFold
-curl -v https://health.api.nvidia.com/v1/biology/meta/esmfold/predict
+curl -v https://api.nvidia.com/v1/biology/meta/esmfold/predict
 ```
+
+> **Note**: You'll need to include your NVIDIA API key in the request headers for successful authentication.
 
 ## Development
 

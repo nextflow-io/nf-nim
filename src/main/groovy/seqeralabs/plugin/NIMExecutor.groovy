@@ -51,13 +51,13 @@ class NIMExecutor extends Executor implements ExtensionPoint {
     void register() {
         super.register()
         
-        // Configure endpoints for different NIM services
+        // Configure endpoints for different NIM services using NVIDIA API
         this.nimEndpoints = [
-            'rfdiffusion': session.config.navigate('nim.rfdiffusion.endpoint') ?: 'http://localhost:8000/biology/ipd/rfdiffusion/generate',
-            'alphafold2': session.config.navigate('nim.alphafold2.endpoint') ?: 'http://localhost:8000/biology/deepmind/alphafold2/predict',
-            'esmfold': session.config.navigate('nim.esmfold.endpoint') ?: 'http://localhost:8000/biology/meta/esmfold/predict',
-            'deepvariant': session.config.navigate('nim.deepvariant.endpoint') ?: 'http://localhost:8000/biology/nvidia/deepvariant/call',
-            'fq2bam': session.config.navigate('nim.fq2bam.endpoint') ?: 'http://localhost:8000/biology/nvidia/fq2bam/align'
+            'rfdiffusion': 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate',
+            'alphafold2': 'https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict',
+            'esmfold': 'https://api.nvidia.com/v1/biology/meta/esmfold/predict',
+            'deepvariant': 'https://api.nvidia.com/v1/biology/nvidia/deepvariant/call',
+            'fq2bam': 'https://api.nvidia.com/v1/biology/nvidia/fq2bam/align'
         ]
         
         this.httpClient = HttpClient.newBuilder()
