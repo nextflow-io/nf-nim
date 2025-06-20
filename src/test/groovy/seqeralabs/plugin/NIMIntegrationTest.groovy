@@ -38,6 +38,8 @@ import java.time.Duration
  */
 class NIMIntegrationTest extends Specification {
 
+    Path workDir
+
     def setup() {
         // Skip integration tests if neither API key is available
         def apiKey = System.getenv('NVIDIA_API_KEY') ?: System.getenv('NVCF_RUN_KEY')
@@ -147,7 +149,7 @@ class NIMIntegrationTest extends Specification {
     @Requires({ System.getenv('NVIDIA_API_KEY') || System.getenv('NVCF_RUN_KEY') })
     def 'should use custom endpoint configuration'() {
         given:
-        def customEndpoint = 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        def customEndpoint = 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         def session = Mock(Session)
         session.config >> [nim: [rfdiffusion: [endpoint: customEndpoint]]]
         

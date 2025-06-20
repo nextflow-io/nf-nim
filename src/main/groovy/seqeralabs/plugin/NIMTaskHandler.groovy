@@ -101,6 +101,8 @@ class NIMTaskHandler extends TaskHandler {
             exitStatus = 1
             return
         }
+        
+        println("Using endpoint: ${endpoint}")
 
         println("Executing NIM task: rfdiffusion")
 
@@ -123,10 +125,10 @@ ATOM      5  CB  MET A   1      19.353  14.685  26.502  1.00 35.88           C""
             tempFile.text = requestBody
             
             def curlCommand = [
-                'curl', '-s', '-w', '%{http_code}',
-                '--cacert', '/etc/ssl/cert.pem',
+                'curl', '-w', '%{http_code}',
                 '--connect-timeout', '30',
                 '--max-time', '300',
+                '--show-error',  // Show error details
                 '-H', "Content-Type: application/json",
                 '-H', "Authorization: Bearer ${apiKey}",
                 '-H', "User-Agent: nf-nim-plugin/1.0",

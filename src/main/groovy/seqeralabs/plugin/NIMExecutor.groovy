@@ -56,9 +56,9 @@ class NIMExecutor extends Executor {
     void register() {
         super.register()
         
-        // Configure default endpoint for RFDiffusion NIM service using NVIDIA API
+        // Configure default endpoint for RFDiffusion NIM service using NVIDIA Health API
         this.nimEndpoints = [
-            'rfdiffusion': 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+            'rfdiffusion': 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         ]
         
         // Override with custom endpoints from configuration
