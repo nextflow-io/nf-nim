@@ -15,11 +15,12 @@ params.diffusion_steps = 15
 
 workflow {
     // Example 1: RFDiffusion protein design
-    rfdiffusionTask(file(params.pdb_file, exists: true))
+    nimRFDiffusion(file(params.pdb_file, exists: true))
 }
 
-process rfdiffusionTask {
+process nimRFDiffusion {
     executor 'nim'
+    ext nim: 'rfdiffusion'
 
     input:
     path pdb_file
@@ -28,9 +29,6 @@ process rfdiffusionTask {
     path "output.pdb"
 
     script:
-    // Specify which NIM service to use
-    task.ext.nim = "rfdiffusion"
-
     """
     # The NIM executor will handle the actual API call to RFDiffusion
     # Input parameters are automatically passed from params
