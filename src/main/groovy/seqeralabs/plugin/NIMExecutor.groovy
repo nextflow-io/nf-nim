@@ -29,6 +29,7 @@ import nextflow.processor.TaskStatus
 import nextflow.util.ServiceName
 import org.pf4j.ExtensionPoint
 
+import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -151,18 +152,59 @@ class NIMExecutor extends Executor implements ExtensionPoint {
 
             log.info "Executing NIM task: ${task.name} using service: ${nimService}"
 
-            // For now, just simulate the task execution
-            // TODO: Implement actual HTTP requests to NIM endpoints
-            def outputFile = task.workDir.resolve('output.pdb')
-            outputFile.text = """ATOM      1  N   ALA A  20      -8.901   4.127  -0.555  1.00 11.99           N  
-ATOM      2  CA  ALA A  20      -8.608   3.135  -1.618  1.00 11.82           C  
-ATOM      3  C   ALA A  20      -7.117   2.964  -1.897  1.00 11.75           C  
-ATOM      4  O   ALA A  20      -6.632   1.849  -2.088  1.00 12.05           O  
-ATOM      5  CB  ALA A  20      -9.303   3.421  -2.953  1.00 11.56           C"""
+            try {
+                // Build the request body
+                String requestBody = buildRequestBody(nimService)
+                log.debug "Request body: ${requestBody}"
 
-            log.info "NIM task simulated successfully: ${task.name}"
-            exitStatus = 0
-            completed = true
+                // Get API key from environment or session config
+                String apiKey = System.getenv('NVIDIA_API_KEY') ?: task.processor.session.config.nvidia?.apiKey
+                if (!apiKey) {
+                    throw new IllegalArgumentException("NVIDIA API key is required. Set NVIDIA_API_KEY environment variable or nvidia.apiKey in config")
+                }
+
+                // Create HTTP request
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header('Content-Type', 'application/json')
+                        .header('Authorization', "Bearer ${apiKey}")
+                        .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                        .timeout(Duration.ofMinutes(10)) // RFDiffusion can take several minutes
+                        .build()
+
+                log.info "Sending request to NIM endpoint: ${endpoint}"
+
+                // Send the request
+                HttpResponse<String> response = executor.httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+                log.info "Received response with status: ${response.statusCode()}"
+
+                if (response.statusCode() == 200) {
+                    // Process the successful response
+                    processResponse(nimService, response.body())
+                    log.info "NIM task completed successfully: ${task.name}"
+                    exitStatus = 0
+                } else {
+                    // Handle error response
+                    log.error "NIM API request failed with status ${response.statusCode()}: ${response.body()}"
+                    
+                    // Save error response for debugging
+                    def errorFile = task.workDir.resolve('error.json')
+                    errorFile.text = response.body()
+                    
+                    exitStatus = 1
+                }
+            } catch (Exception e) {
+                log.error "Failed to execute NIM API request: ${e.message}", e
+                
+                // Save error details for debugging
+                def errorFile = task.workDir.resolve('error.txt')
+                errorFile.text = "Error: ${e.message}\nStack trace: ${e.stackTrace.join('\n')}"
+                
+                exitStatus = 1
+            } finally {
+                completed = true
+            }
         }
 
         private String buildRequestBody(String nimService) {
