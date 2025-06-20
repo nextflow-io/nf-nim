@@ -25,6 +25,7 @@ import nextflow.processor.TaskStatus
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.nio.file.Files
 
 /**
  * Task handler for NIM tasks
@@ -93,63 +94,103 @@ class NIMTaskHandler extends TaskHandler {
             return
         }
 
-        def endpoint = executor.nimEndpoints[nimService]
+        def endpoint = executor.nimEndpoints['rfdiffusion']
         if (!endpoint) {
-            println("Unknown NIM service: ${nimService}")
+            println("No endpoint configured for rfdiffusion")
             completed = true
             exitStatus = 1
             return
         }
 
-        println("Executing NIM task: ${nimService}")
+        println("Executing NIM task: rfdiffusion")
 
         try {
-            // Build request body for RFDiffusion
+            // Build request body with format matching the working example
             def requestData = [
-                algorithm_version: "1.1.0",
-                inference_type: "ddim",
-                num_steps: 50,
-                inference_input: [
-                    length: 100,
-                    hotspots: "1-10,50-60"
-                ]
+                input_pdb: """ATOM      1  N   MET A   1      20.154  16.977  27.083  1.00 35.88           N  
+ATOM      2  CA  MET A   1      19.030  16.183  26.502  1.00 35.88           C  
+ATOM      3  C   MET A   1      18.758  16.623  25.060  1.00 35.88           C  
+ATOM      4  O   MET A   1      19.663  17.024  24.335  1.00 35.88           O  
+ATOM      5  CB  MET A   1      19.353  14.685  26.502  1.00 35.88           C""",
+                contigs: "A20-60/0 50-100",
+                hotspot_res: ["A50", "A51", "A52", "A53", "A54"],
+                diffusion_steps: 15
             ]
             def requestBody = new JsonBuilder(requestData).toString()
-
-            // Create HTTP request
-            def request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer ${apiKey}")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofMinutes(5))
-                    .build()
-
-            // Send request
-            def response = executor.httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-
-            if (response.statusCode() == 200) {
-                // Parse response
-                def responseData = new JsonSlurper().parseText(response.body() as String)
+            
+            // Use curl with the correct format
+            def tempFile = Files.createTempFile("nim_request", ".json")
+            tempFile.text = requestBody
+            
+            def curlCommand = [
+                'curl', '-s', '-w', '%{http_code}',
+                '--cacert', '/etc/ssl/cert.pem',
+                '--connect-timeout', '30',
+                '--max-time', '300',
+                '-H', "Content-Type: application/json",
+                '-H', "Authorization: Bearer ${apiKey}",
+                '-H', "User-Agent: nf-nim-plugin/1.0",
+                '-H', "nvcf-poll-seconds: 300",  // Add the polling header from example
+                '-d', "@${tempFile.toString()}",
+                endpoint
+            ]
+            
+            println "Executing curl command to NIM API..."
+            println "Command: ${curlCommand.join(' ')}"
+            def processBuilder = new ProcessBuilder(curlCommand as String[])
+            def process = processBuilder.start()
+            
+            def output = new StringBuilder()
+            def error = new StringBuilder()
+            
+            process.inputStream.eachLine { line ->
+                output.append(line).append('\n')
+            }
+            process.errorStream.eachLine { line ->
+                error.append(line).append('\n')
+            }
+            
+            def exitCode = process.waitFor()
+            tempFile.delete()  // Clean up temp file
+            
+            println "Curl exit code: ${exitCode}"
+            println "Curl output: ${output.toString()}"
+            println "Curl error: ${error.toString()}"
+            
+            if (exitCode == 0) {
+                def responseText = output.toString()
+                // Extract HTTP status code (last 3 digits)
+                def statusPattern = ~/(\d{3})$/
+                def statusMatcher = statusPattern.matcher(responseText)
+                def statusCode = statusMatcher.find() ? Integer.parseInt(statusMatcher.group(1)) : 0
+                def responseBody = statusMatcher.find() ? responseText.substring(0, responseText.length() - 3) : responseText
                 
-                // Save results to work directory
-                def resultFile = task.workDir.resolve('nim_result.json')
-                resultFile.text = new JsonBuilder(responseData).toPrettyString()
-                
-                println("NIM task completed successfully")
-                completed = true
-                exitStatus = 0
+                if (statusCode == 200 || statusCode == 202) {
+                    // Save results to work directory
+                    def resultFile = task.workDir.resolve('nim_result.json')
+                    resultFile.text = responseBody
+                    
+                    println("NIM task completed successfully via curl")
+                    completed = true
+                    exitStatus = 0
+                } else {
+                    println("NIM API request failed with status: ${statusCode}")
+                    println("Response: ${responseBody}")
+                    completed = true
+                    exitStatus = 1
+                }
             } else {
-                println("NIM API request failed with status: ${response.statusCode()}")
-                println("Response: ${response.body()}")
+                println("Curl command failed with exit code: ${exitCode}")
+                println("Error: ${error.toString()}")
                 completed = true
                 exitStatus = 1
             }
 
         } catch (Exception e) {
             println("Error executing NIM request: ${e.message}")
+            e.printStackTrace()  // More detailed error info
             completed = true
             exitStatus = 1
         }
     }
-} 
+}

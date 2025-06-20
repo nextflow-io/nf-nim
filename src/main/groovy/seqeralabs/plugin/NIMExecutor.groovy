@@ -32,6 +32,12 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import nextflow.util.Duration
 import java.time.Duration as JavaDuration
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLSession
+import java.security.cert.X509Certificate
 
 /**
  * NVIDIA NIM (NVIDIA Inference Microservices) executor for Nextflow
@@ -66,8 +72,10 @@ class NIMExecutor extends Executor {
             }
         }
         
+        // Configure HTTP client for API access
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(JavaDuration.ofSeconds(30))
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build()
                 
         log.info "NIM executor registered with endpoints: ${nimEndpoints.keySet()}"
