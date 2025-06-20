@@ -5,7 +5,7 @@
  * Demonstrates multiple NVIDIA NIM services (RFDiffusion, AlphaFold2, ESMFold)
  */
 
-params.pdb_file        = "1R42.pdb"
+params.pdb_file        = "https://files.rcsb.org/download/1R42.pdb"
 params.sequence        = "MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNTNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKNL"
 
 // RFDiffusion parameters
