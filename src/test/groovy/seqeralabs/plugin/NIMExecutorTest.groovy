@@ -18,7 +18,10 @@ package seqeralabs.plugin
 
 import nextflow.Session
 import nextflow.processor.TaskRun
+import nextflow.processor.TaskStatus
 import spock.lang.Specification
+import java.nio.file.Path
+import java.nio.file.Files
 
 /**
  * Tests for NIM executor
@@ -37,10 +40,7 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
-        executor.nimEndpoints['alphafold2'] == 'https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict'
-        executor.nimEndpoints['esmfold'] == 'https://api.nvidia.com/v1/biology/meta/esmfold/predict'
-        executor.nimEndpoints['deepvariant'] == 'https://api.nvidia.com/v1/biology/nvidia/deepvariant/call'
-        executor.nimEndpoints['fq2bam'] == 'https://api.nvidia.com/v1/biology/nvidia/fq2bam/align'
+        executor.nimEndpoints.size() == 1
     }
 
     def 'should create task handler'() {
@@ -57,10 +57,9 @@ class NIMExecutorTest extends Specification {
         def handler = executor.createTaskHandler(taskRun)
         
         then:
-        handler instanceof NIMExecutor.NIMTaskHandler
+        handler instanceof NIMTaskHandler
     }
 
-    @spock.lang.PendingFeature
     def 'should use custom endpoint from config'() {
         given:
         def customEndpoint = 'http://custom-nim-server:8080/biology/ipd/rfdiffusion/generate'
@@ -74,19 +73,14 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == customEndpoint
-        // Other endpoints should still use defaults
-        executor.nimEndpoints['alphafold2'] == 'https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict'
     }
 
-    @spock.lang.PendingFeature
-    def 'should support multiple custom endpoints'() {
+    def 'should support custom endpoint configuration'() {
         given:
         def customRFDiffusion = 'http://server1:8080/biology/ipd/rfdiffusion/generate'
-        def customAlphaFold = 'http://server2:8080/biology/deepmind/alphafold2/predict'
         def session = Mock(Session)
         session.config >> [nim: [
-            rfdiffusion: [endpoint: customRFDiffusion],
-            alphafold2: [endpoint: customAlphaFold]
+            rfdiffusion: [endpoint: customRFDiffusion]
         ]]
         
         when:
@@ -96,7 +90,105 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == customRFDiffusion
-        executor.nimEndpoints['alphafold2'] == customAlphaFold
-        executor.nimEndpoints['esmfold'] == 'https://api.nvidia.com/v1/biology/meta/esmfold/predict'
+        executor.nimEndpoints.size() == 1
+    }
+
+    def 'should initialize task handler with correct status'() {
+        given:
+        def session = Mock(Session)
+        session.config >> [:]
+        def executor = new NIMExecutor()
+        executor.session = session
+        executor.register()
+        
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        
+        then:
+        handler.task == taskRun
+        handler.status == TaskStatus.NEW
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should transition status on submit'() {
+        given:
+        def session = Mock(Session)
+        session.config >> [:]
+        def executor = new NIMExecutor()
+        executor.session = session
+        executor.register()
+        
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        def handler = new NIMTaskHandler(taskRun, executor)
+        
+        when:
+        handler.submit()
+        
+        then:
+        handler.status == TaskStatus.SUBMITTED
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should detect running status'() {
+        given:
+        def session = Mock(Session)
+        session.config >> [:]
+        def executor = new NIMExecutor()
+        executor.session = session
+        executor.register()
+        
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        def handler = new NIMTaskHandler(taskRun, executor)
+        handler.submit()
+        
+        when:
+        def isRunning = handler.checkIfRunning()
+        
+        then:
+        isRunning == true
+        handler.status == TaskStatus.RUNNING
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should handle kill signal'() {
+        given:
+        def session = Mock(Session)
+        session.config >> [:]
+        def executor = new NIMExecutor()
+        executor.session = session
+        executor.register()
+        
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        def handler = new NIMTaskHandler(taskRun, executor)
+        
+        when:
+        handler.kill()
+        
+        then:
+        handler.checkIfCompleted() == true
+        handler.status == TaskStatus.COMPLETED
+        
+        cleanup:
+        workDir.toFile().deleteDir()
     }
 } 

@@ -50,16 +50,27 @@ class NIMExecutor extends Executor {
     void register() {
         super.register()
         
-        // Configure endpoint for RFDiffusion NIM service using NVIDIA API
+        // Configure default endpoint for RFDiffusion NIM service using NVIDIA API
         this.nimEndpoints = [
             'rfdiffusion': 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         ]
+        
+        // Override with custom endpoints from configuration
+        def nimConfig = session.config?.nim as Map
+        if (nimConfig) {
+            nimConfig.each { service, config ->
+                if (config instanceof Map && config.endpoint) {
+                    this.nimEndpoints[service as String] = config.endpoint as String
+                    log.info "Using custom endpoint for ${service}: ${config.endpoint}"
+                }
+            }
+        }
         
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(JavaDuration.ofSeconds(30))
                 .build()
                 
-        log.info "NIM executor registered with RFDiffusion endpoint"
+        log.info "NIM executor registered with endpoints: ${nimEndpoints.keySet()}"
     }
 
     @Override
