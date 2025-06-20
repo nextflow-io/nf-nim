@@ -19,7 +19,7 @@ workflow {
 }
 
 process rfdiffusionTask {
-    // executor "nim"
+    executor 'nim'
 
     input:
     path pdb_file
