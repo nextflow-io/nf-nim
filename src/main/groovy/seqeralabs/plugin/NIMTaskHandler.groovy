@@ -84,14 +84,10 @@ class NIMTaskHandler extends TaskHandler {
     }
 
     private void executeNIMTask() {
-        // Get the NIM service type
-        String nimService = 'rfdiffusion' // default
-
-        // Get API key from environment
-        def apiKey = System.getenv('NVIDIA_API_KEY')
-        
+        // Check for API key
+        def apiKey = System.getenv('NVCF_RUN_KEY')
         if (!apiKey) {
-            println("NVIDIA_API_KEY not found in environment")
+            println("No API key found. Set NVCF_RUN_KEY environment variable.")
             completed = true
             exitStatus = 1
             return
