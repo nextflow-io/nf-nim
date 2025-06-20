@@ -51,20 +51,16 @@ class NIMExecutor extends Executor implements ExtensionPoint {
     void register() {
         super.register()
         
-        // Configure endpoints for different NIM services using NVIDIA API
+        // Configure endpoint for RFDiffusion NIM service using NVIDIA API
         this.nimEndpoints = [
-            'rfdiffusion': 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate',
-            'alphafold2': 'https://api.nvidia.com/v1/biology/deepmind/alphafold2/predict',
-            'esmfold': 'https://api.nvidia.com/v1/biology/meta/esmfold/predict',
-            'deepvariant': 'https://api.nvidia.com/v1/biology/nvidia/deepvariant/call',
-            'fq2bam': 'https://api.nvidia.com/v1/biology/nvidia/fq2bam/align'
+            'rfdiffusion': 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         ]
         
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build()
                 
-        log.info "NIM executor registered with endpoints: ${nimEndpoints.keySet()}"
+        log.info "NIM executor registered with RFDiffusion endpoint"
     }
 
     @Override
@@ -170,20 +166,10 @@ ATOM      5  CB  ALA A  20      -9.303   3.421  -2.953  1.00 11.56           C""
         }
 
         private String buildRequestBody(String nimService) {
-            switch (nimService) {
-                case 'rfdiffusion':
-                    return buildRFDiffusionRequest()
-                case 'alphafold2':
-                    return buildAlphaFold2Request() 
-                case 'esmfold':
-                    return buildESMFoldRequest()
-                case 'deepvariant':
-                    return buildDeepVariantRequest()
-                case 'fq2bam':
-                    return buildFq2BamRequest()
-                default:
-                    throw new IllegalArgumentException("Unsupported NIM service: $nimService")
+            if (nimService != 'rfdiffusion') {
+                throw new IllegalArgumentException("Only RFDiffusion is supported. Use ext.nim = 'rfdiffusion'")
             }
+            return buildRFDiffusionRequest()
         }
 
         private String buildRFDiffusionRequest() {
@@ -200,52 +186,13 @@ ATOM      5  CB  ALA A  20      -9.303   3.421  -2.953  1.00 11.56           C""
             ]).toString()
         }
 
-        private String buildAlphaFold2Request() {
-            // Get sequence from input file or parameters
-            def sequence = getInputSequence()
-            return new JsonBuilder([
-                sequence: sequence
-            ]).toString()
-        }
-
-        private String buildESMFoldRequest() {
-            def sequence = getInputSequence()
-            return new JsonBuilder([
-                sequence: sequence
-            ]).toString()
-        }
-
-        private String buildDeepVariantRequest() {
-            // This would handle BAM/CRAM files and reference genome
-            throw new UnsupportedOperationException("DeepVariant NIM integration not yet implemented")
-        }
-
-        private String buildFq2BamRequest() { 
-            // This would handle FASTQ files and reference genome
-            throw new UnsupportedOperationException("Fq2Bam NIM integration not yet implemented")
-        }
-
         private void processResponse(String nimService, String responseBody) {
             def jsonSlurper = new JsonSlurper()
             def responseData = jsonSlurper.parseText(responseBody) as Map
 
-            switch (nimService) {
-                case 'rfdiffusion':
-                    outputContent = responseData.output_pdb as String
-                    def outputFile = task.workDir.resolve('output.pdb')
-                    outputFile.text = outputContent
-                    break
-                case 'alphafold2':
-                case 'esmfold':
-                    outputContent = responseData.pdb as String
-                    def outputFile = task.workDir.resolve('predicted_structure.pdb')
-                    outputFile.text = outputContent
-                    break
-                default:
-                    // For other services, just save the raw response
-                    def outputFile = task.workDir.resolve('output.json')
-                    outputFile.text = responseBody
-            }
+            outputContent = responseData.output_pdb as String
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = outputContent
         }
 
         private String getInputPdb() {
@@ -266,30 +213,6 @@ ATOM      5  CB  ALA A  20      -9.303   3.421  -2.953  1.00 11.56           C""
             // If no PDB file found, use default example (1R42.pdb content)
             log.warn "No PDB input file found, using default example structure"
             return getDefaultPdbContent()
-        }
-
-        private String getInputSequence() {
-            // Try to read sequence from FASTA file or task parameters
-            def inputFiles = task.getInputFiles()
-            for (def entry : inputFiles) {
-                def file = entry.value as Path
-                def fileName = file.fileName.toString()
-                if (fileName.endsWith('.fasta') || fileName.endsWith('.fa')) {
-                    def content = file.text
-                    // Extract sequence (skip header lines starting with >)
-                    return content.split('\n')
-                            .findAll { !it.startsWith('>') && it.trim() }
-                            .join('')
-                }
-            }
-
-            // Check for sequence parameter
-            def sequence = task.processor.session.params.sequence
-            if (sequence) {
-                return sequence as String
-            }
-
-            throw new IllegalArgumentException("No sequence input found. Provide a FASTA file or set params.sequence")
         }
 
         private String getDefaultPdbContent() {
