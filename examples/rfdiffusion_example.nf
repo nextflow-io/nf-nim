@@ -30,13 +30,15 @@ process downloadPdb {
 }
 
 process rfdiffusionTask {
-    executor 'rfdiffusion'
+    executor 'nim'
     
     input:
     path pdb_file
     
     output:
     path "output.pdb"
+
+    task.ext.nim = "rfdiffusion"
     
     script:
     """
