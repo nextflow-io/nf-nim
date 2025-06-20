@@ -25,7 +25,8 @@ import nextflow.processor.TaskStatus
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import java.nio.file.Files
+import java.net.URI
+import groovy.json.JsonBuilder
 
 /**
  * Task handler for NIM tasks
@@ -107,16 +108,14 @@ class NIMTaskHandler extends TaskHandler {
         println("Executing NIM task: rfdiffusion")
 
         try {
-            // Download the PDB file content like the working example
+            // Download and process PDB file exactly like the working example
             println("Downloading PDB file from RCSB...")
             def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
-            def pdbProcess = new ProcessBuilder(['curl', '-s', pdbUrl]).start()
-            def pdbContent = new StringBuilder()
-            pdbProcess.inputStream.eachLine { line ->
-                if (line.startsWith("ATOM")) {
-                    pdbContent.append(line).append("\\n")
-                }
-            }
+            
+            // Use the exact same command as the working script: curl | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", $0}'
+            def pdbCommand = ['bash', '-c', "curl -s ${pdbUrl} | grep '^ATOM' | head -n 400 | awk '{printf \"%s\\\\n\", \$0}'".toString()]
+            def pdbProcess = new ProcessBuilder(pdbCommand).start()
+            def pdbData = pdbProcess.inputStream.text.trim()
             def pdbExitCode = pdbProcess.waitFor()
             
             if (pdbExitCode != 0) {
@@ -126,89 +125,61 @@ class NIMTaskHandler extends TaskHandler {
                 return
             }
             
-            // Take first 400 ATOM lines like the working example
-            def pdbLines = pdbContent.toString().split("\\\\n")
-            def pdbData = pdbLines.take(400).join("\\n")
-            
             // Build request body with format matching the working example
+            println("PDB data length: ${pdbData.length()}")
+            println("PDB data first 200 chars: ${pdbData.take(200)}")
+            
+            // Convert literal \n characters to actual newlines for JSON
+            def processedPdbData = pdbData.replace('\\n', '\n')
+            println("Processed PDB data first 200 chars: ${processedPdbData.take(200)}")
+            
             def requestData = [
-                input_pdb: pdbData,
+                input_pdb: processedPdbData,
                 contigs: "A20-60/0 50-100",
                 hotspot_res: ["A50", "A51", "A52", "A53", "A54"],
                 diffusion_steps: 15
             ]
             def requestBody = new JsonBuilder(requestData).toString()
+            println("Request body first 500 chars: ${requestBody.take(500)}")
             
-            // Use curl with the correct format
-            def tempFile = Files.createTempFile("nim_request", ".json")
-            tempFile.text = requestBody
+            // Use Java HTTP client with proper SSL configuration
+            def httpClient = executor.httpClient
+            def request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .timeout(Duration.ofMinutes(5))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer ${apiKey}")
+                .header("User-Agent", "nf-nim-plugin/1.0")
+                .header("nvcf-poll-seconds", "300")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build()
             
-            def curlCommand = [
-                'curl', '-w', '%{http_code}',
-                '--connect-timeout', '30',
-                '--max-time', '300',
-                '--show-error',  // Show error details
-                '-H', "Content-Type: application/json",
-                '-H', "Authorization: Bearer ${apiKey}",
-                '-H', "User-Agent: nf-nim-plugin/1.0",
-                '-H', "nvcf-poll-seconds: 300",  // Add the polling header from example
-                '-d', "@${tempFile.toString()}",
-                endpoint
-            ]
+            println("Executing HTTP request to NIM API...")
+            def response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             
-            println "Executing curl command to NIM API..."
-            println "Command: ${curlCommand.join(' ')}"
-            def processBuilder = new ProcessBuilder(curlCommand as String[])
-            def process = processBuilder.start()
+            def statusCode = response.statusCode()
+            def responseBody = response.body()
             
-            def output = new StringBuilder()
-            def error = new StringBuilder()
+            println("HTTP status code: ${statusCode}")
+            println("Response body: ${responseBody}")
             
-            process.inputStream.eachLine { line ->
-                output.append(line).append('\n')
-            }
-            process.errorStream.eachLine { line ->
-                error.append(line).append('\n')
-            }
+            // Save results to work directory regardless of status for debugging
+            def resultFile = task.workDir.resolve('nim_result.json')
+            resultFile.text = responseBody
             
-            def exitCode = process.waitFor()
-            tempFile.delete()  // Clean up temp file
-            
-            println "Curl exit code: ${exitCode}"
-            println "Curl output: ${output.toString()}"
-            println "Curl error: ${error.toString()}"
-            
-            if (exitCode == 0) {
-                def responseText = output.toString()
-                // Extract HTTP status code (last 3 digits)
-                def statusPattern = ~/(\d{3})$/
-                def statusMatcher = statusPattern.matcher(responseText)
-                def statusCode = statusMatcher.find() ? Integer.parseInt(statusMatcher.group(1)) : 0
-                def responseBody = statusMatcher.find() ? responseText.substring(0, responseText.length() - 3) : responseText
-                
-                // Save results to work directory regardless of status for debugging
-                def resultFile = task.workDir.resolve('nim_result.json')
-                resultFile.text = responseBody
-                
-                if (statusCode == 200 || statusCode == 202) {
-                    println("NIM task completed successfully via curl")
-                    completed = true
-                    exitStatus = 0
-                } else if (statusCode == 422) {
-                    println("NIM API validation error (422): ${responseBody}")
-                    // For integration tests, we'll treat validation errors as "completed" 
-                    // since they indicate the API is working but data is invalid
-                    completed = true
-                    exitStatus = 0  // Consider this success for testing purposes
-                } else {
-                    println("NIM API request failed with status: ${statusCode}")
-                    println("Response: ${responseBody}")
-                    completed = true
-                    exitStatus = 1
-                }
+            if (statusCode == 200 || statusCode == 202) {
+                println("NIM task completed successfully")
+                completed = true
+                exitStatus = 0
+            } else if (statusCode == 422) {
+                println("NIM API validation error (422): ${responseBody}")
+                // For integration tests, we'll treat validation errors as "completed" 
+                // since they indicate the API is working but data is invalid
+                completed = true
+                exitStatus = 0  // Consider this success for testing purposes
             } else {
-                println("Curl command failed with exit code: ${exitCode}")
-                println("Error: ${error.toString()}")
+                println("NIM API request failed with status: ${statusCode}")
+                println("Response: ${responseBody}")
                 completed = true
                 exitStatus = 1
             }

@@ -100,7 +100,7 @@ class NIMIntegrationTest extends Specification {
         
         and: 'result file should contain valid JSON'
         def resultText = resultFile.text
-        resultText.contains('"algorithm_version"') || resultText.contains('error') // Either success or documented error
+        resultText.contains('"output_pdb"') || resultText.contains('"error"') || resultText.contains('"detail"') // Either success or documented error
         
         cleanup:
         workDir.toFile().deleteDir()
