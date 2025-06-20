@@ -1,0 +1,211 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Nextflow Plugin Build Configuration
+
+Guidelines for Gradle build configuration and project setup for Nextflow plugins.
+
+## Gradle Plugin Configuration
+
+### Required Plugin
+```gradle
+plugins {
+    id 'io.nextflow.nextflow-plugin' version '0.0.1-alpha4'
+}
+```
+
+### Version Management
+- Use semantic versioning (e.g., '0.1.0')
+- Update version in [build.gradle](mdc:build.gradle) for releases
+- Align with Nextflow version compatibility
+
+### Plugin Configuration Block
+Based on [build.gradle](mdc:build.gradle):
+
+```gradle
+nextflowPlugin {
+    // Minimum compatible Nextflow version
+    nextflowVersion = '24.10.0'
+    
+    // Plugin metadata
+    provider = 'seqeralabs'
+    className = 'seqeralabs.plugin.NfNIMPlugin'
+    
+    // Extension points registration
+    extensionPoints = [
+        'seqeralabs.plugin.NfNIMExtension',
+        'seqeralabs.plugin.NfNIMFactory'
+    ]
+    
+    // Publishing configuration
+    publishing {
+        registry {
+            url = 'https://nf-plugins-registry.dev-tower.net/api'
+            authToken = project.findProperty('pluginRegistry.accessToken')
+        }
+    }
+}
+```
+
+## Extension Points Registration
+
+### Types of Extensions
+1. **Plugin Entry Point**: Main plugin class extending `BasePlugin`
+2. **Extension Functions**: Classes with `@Function` annotated methods
+3. **Trace Observers**: Factory classes for pipeline lifecycle hooks
+4. **Executors**: Custom executor implementations
+
+### Registration Pattern
+```gradle
+extensionPoints = [
+    'package.PluginMainClass',        // Main plugin
+    'package.ExtensionClass',         // Functions/extensions
+    'package.FactoryClass',          // Observer factories
+    'package.ExecutorClass'          // Custom executors
+]
+```
+
+## Build Tasks & Makefile Integration
+
+### Standard Build Commands
+Reference [Makefile](mdc:Makefile) patterns:
+
+```makefile
+# Build the plugin
+assemble:
+	./gradlew assemble
+
+# Install to local Nextflow installation
+install:
+	./gradlew install
+
+# Create release and publish
+release:
+	./gradlew publishToRegistry
+```
+
+### Gradle Wrapper
+- Always use `./gradlew` instead of system gradle
+- Commit gradle wrapper files to version control
+- Keep wrapper version updated
+
+## Dependencies Management
+
+### Common Dependencies
+```gradle
+dependencies {
+    // Nextflow core (provided by plugin framework)
+    // Groovy (provided by plugin framework)
+    
+    // Testing
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    
+    // Additional dependencies as needed
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    implementation 'org.apache.httpcomponents:httpclient:4.5.14'
+}
+```
+
+### Dependency Scope Guidelines
+- Use `implementation` for runtime dependencies
+- Use `testImplementation` for test-only dependencies
+- Avoid `compile` (deprecated) or `api` unless exposing transitive deps
+
+## Publishing Configuration
+
+### Registry Setup
+```gradle
+publishing {
+    registry {
+        url = 'https://nf-plugins-registry.dev-tower.net/api'
+        authToken = project.findProperty('pluginRegistry.accessToken')
+    }
+}
+```
+
+### Authentication
+- Store auth token in `~/.gradle/gradle.properties`
+- Never commit credentials to version control
+- Use environment variables for CI/CD
+
+```properties
+# ~/.gradle/gradle.properties
+pluginRegistry.accessToken=your_token_here
+```
+
+## Testing Configuration
+
+### Spock Framework Setup
+```gradle
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        showStandardStreams = false
+    }
+}
+```
+
+### Test Directory Structure
+```
+src/
+├── main/groovy/
+│   └── seqeralabs/plugin/
+└── test/groovy/
+    └── seqeralabs/plugin/
+        └── *Test.groovy
+```
+
+## Build Optimization
+
+### Groovy Compilation
+```gradle
+compileGroovy {
+    groovyOptions.optimizationOptions.all = true
+    groovyOptions.optimizationOptions.indy = true
+}
+```
+
+### JVM Configuration
+```gradle
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+```
+
+## Continuous Integration
+
+### GitHub Actions Example
+```yaml
+name: Build Plugin
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    - run: ./gradlew assemble test
+```
+
+## Plugin Versioning Strategy
+
+### Development Versions
+- Use `-SNAPSHOT` suffix for development
+- Example: `0.1.0-SNAPSHOT`
+
+### Release Versions
+- Follow semantic versioning
+- Major.Minor.Patch format
+- Document breaking changes
+
+### Compatibility Matrix
+- Test against multiple Nextflow versions
+- Document minimum required version
+- Consider backward compatibility impact

@@ -1,0 +1,104 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Nextflow NIM Plugin Development Guidelines
+
+This is a Nextflow plugin for integrating NVIDIA NIMs (NVIDIA Inference Microservices) as custom executors.
+
+## Project Structure
+
+- **Main Plugin Classes**: Located in `src/main/groovy/seqeralabs/plugin/`
+  - [NfNIMPlugin.groovy](mdc:src/main/groovy/seqeralabs/plugin/NfNIMPlugin.groovy) - Main plugin entry point
+  - [NfNIMExtension.groovy](mdc:src/main/groovy/seqeralabs/plugin/NfNIMExtension.groovy) - Plugin extensions and functions
+  - [NfNIMFactory.groovy](mdc:src/main/groovy/seqeralabs/plugin/NfNIMFactory.groovy) - Trace observer factory
+  - [NfNIMObserver.groovy](mdc:src/main/groovy/seqeralabs/plugin/NfNIMObserver.groovy) - Pipeline lifecycle observer
+
+- **Build Configuration**: [build.gradle](mdc:build.gradle) - Gradle build configuration
+- **Examples**: [examples/](mdc:examples) - Contains example NIM client implementations
+
+## Development Guidelines
+
+### Code Style & Standards
+- Use `@CompileStatic` annotation on all Groovy classes for performance and type safety
+- Follow Apache License 2.0 header format in all source files
+- Use proper Groovy conventions and camelCase naming
+- Add comprehensive JavaDoc comments to public methods
+
+### Plugin Architecture Patterns
+
+#### Executor Implementation
+When implementing custom executors:
+- Extend `nextflow.executor.Executor` class
+- Implement `org.pf4j.ExtensionPoint` interface
+- Use `@ServiceName('executor-name')` annotation
+- Register in extension points in build.gradle
+
+#### Extension Functions
+- Use `@Function` annotation for custom pipeline functions
+- Extend `PluginExtensionPoint` class
+- Initialize session resources in `init(Session session)` method
+
+#### Trace Observers
+- Implement `TraceObserver` interface for pipeline lifecycle hooks
+- Use `@Slf4j` for logging
+- Create corresponding factory implementing `TraceObserverFactory`
+
+### NVIDIA NIM Integration
+
+#### API Communication
+- Use HTTP REST APIs to communicate with NIM services
+- Support both synchronous and asynchronous execution patterns
+- Implement proper error handling and retry logic
+- Handle authentication and authorization as needed
+
+#### Supported NIM Models
+Based on documentation, focus on healthcare/biology NIMs:
+- **ipd/rfdiffusion** - Protein structure generation
+- **deepmind/alphafold2** - Protein structure prediction
+- **meta/esmfold** - Protein structure prediction
+- **nvidia/deepvariant** - Variant calling
+- **nvidia/fq2bam** - Sequence alignment
+
+#### Example Patterns
+Reference the [example clients](mdc:examples) for:
+- Python client implementation patterns
+- Shell script integration
+- PDB file handling
+- JSON request/response formats
+
+### Testing Standards
+- Use Spock framework for testing (following [NfNIMObserverTest.groovy](mdc:src/test/groovy/seqeralabs/plugin/NfNIMObserverTest.groovy))
+- Test factory classes create proper instances
+- Mock external dependencies using Spock's Mock() functionality
+- Follow given/when/then structure
+
+### Build & Deployment
+- Use `make assemble` for building
+- Use `make install` for local testing
+- Use `make release` for publishing to registry
+- Ensure proper version management in build.gradle
+
+## Implementation Checklist
+
+When adding new NIM executors:
+1. [ ] Create executor class extending `Executor`
+2. [ ] Add `@ServiceName` annotation with NIM model name
+3. [ ] Implement required executor methods
+4. [ ] Add to extensionPoints in build.gradle
+5. [ ] Create corresponding tests
+6. [ ] Add example usage scripts
+7. [ ] Update documentation
+
+## Error Handling
+- Implement proper timeout handling for long-running NIM operations
+- Handle network failures gracefully
+- Provide meaningful error messages with troubleshooting hints
+- Log important events using SLF4J annotations
+
+## Performance Considerations
+- Use `@CompileStatic` for performance optimization
+- Implement efficient resource cleanup
+- Consider async patterns for long-running NIM jobs
+- Monitor memory usage for large biological datasets
