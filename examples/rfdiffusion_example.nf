@@ -15,15 +15,7 @@ params.diffusion_steps = 15
 
 workflow {
     // Example 1: RFDiffusion protein design
-    if (params.pdb_file && file(params.pdb_file).exists() || params.pdb_file == "1R42.pdb") {
-        if (!file(params.pdb_file).exists()) {
-            downloadPdb()
-            rfdiffusionTask(downloadPdb.out)
-        }
-        else {
-            rfdiffusionTask(file(params.pdb_file))
-        }
-    }
+    rfdiffusionTask(file(params.pdb_file, exists: true))
 
     // Example 2: AlphaFold2 structure prediction
     if (params.sequence) {
@@ -34,16 +26,6 @@ workflow {
     if (params.sequence) {
         esmfoldTask(params.sequence)
     }
-}
-
-process downloadPdb {
-    output:
-    path "1R42.pdb"
-
-    script:
-    """
-    curl -O https://files.rcsb.org/download/1R42.pdb
-    """
 }
 
 process rfdiffusionTask {
