@@ -1,33 +1,251 @@
-# nf-nim plugin
+# Nextflow NIM Plugin
 
-## Building
+A Nextflow plugin for integrating [NVIDIA NIMs (NVIDIA Inference Microservices)](https://developer.nvidia.com/nim) as custom executors for bioinformatics workflows.
 
-To build the plugin:
+## Overview
+
+This plugin provides a generic `nim` executor that can run various NVIDIA NIM services for biological computing, including:
+
+- **RFDiffusion** - Protein structure generation and design
+- **AlphaFold2** - Protein structure prediction  
+- **ESMFold** - Protein structure prediction
+- **DeepVariant** - Genomic variant calling (planned)
+- **Fq2Bam** - Sequence alignment (planned)
+
+## Installation
+
+Add the plugin to your `nextflow.config`:
+
+```groovy
+plugins {
+    id 'nf-nim'
+}
+```
+
+Or use it directly in your pipeline script:
+
+```groovy
+plugins {
+    id 'nf-nim@0.1.0'
+}
+```
+
+## Configuration
+
+Configure NIM service endpoints in your `nextflow.config`:
+
+```groovy
+nim {
+    rfdiffusion {
+        endpoint = 'http://localhost:8000/biology/ipd/rfdiffusion/generate'
+    }
+    alphafold2 {
+        endpoint = 'http://localhost:8001/biology/deepmind/alphafold2/predict'
+    }
+    esmfold {
+        endpoint = 'http://localhost:8002/biology/meta/esmfold/predict'
+    }
+}
+```
+
+## Usage
+
+### Basic Process Configuration
+
+Use the `nim` executor in your processes and specify which NIM service to use with `task.ext.nim`:
+
+```groovy
+process myNIMProcess {
+    executor 'nim'
+    
+    input:
+    // your inputs
+    
+    output:
+    // your outputs
+    
+    script:
+    task.ext.nim = "rfdiffusion"  // or "alphafold2", "esmfold", etc.
+    
+    """
+    # Your script here - the NIM executor handles the actual API calls
+    echo "Running ${task.ext.nim} analysis"
+    """
+}
+```
+
+### RFDiffusion Example
+
+```groovy
+process rfdiffusionDesign {
+    executor 'nim'
+    
+    input:
+    path pdb_file
+    
+    output:
+    path "output.pdb"
+
+    script:
+    task.ext.nim = "rfdiffusion"
+    
+    """
+    echo "Designing protein structure using RFDiffusion"
+    """
+}
+```
+
+Parameters for RFDiffusion can be set in `params`:
+
+```groovy
+params.contigs = "A20-60/0 50-100"
+params.hotspot_res = ["A50","A51","A52","A53","A54"] 
+params.diffusion_steps = 15
+```
+
+### AlphaFold2/ESMFold Example
+
+```groovy
+process predictStructure {
+    executor 'nim'
+    
+    input:
+    val sequence
+    
+    output:
+    path "predicted_structure.pdb"
+
+    script:
+    task.ext.nim = "alphafold2"  // or "esmfold"
+    
+    """
+    echo "Predicting structure for sequence of length: \$(echo '${sequence}' | wc -c)"
+    """
+}
+```
+
+### Complete Workflow Example
+
+```groovy
+#!/usr/bin/env nextflow
+
+params.pdb_file = "input.pdb"
+params.sequence = "MNIFEMLRIDEGLRLKIYKDTEGYY..."
+
+workflow {
+    // Structure-based design with RFDiffusion
+    if (params.pdb_file) {
+        designProtein(file(params.pdb_file))
+    }
+    
+    // Sequence-based prediction with AlphaFold2
+    if (params.sequence) {
+        predictWithAlphaFold(params.sequence)
+        predictWithESMFold(params.sequence)
+    }
+}
+
+process designProtein {
+    executor 'nim'
+    
+    input:
+    path pdb_file
+    
+    output:
+    path "designed.pdb"
+
+    script:
+    task.ext.nim = "rfdiffusion"
+    """
+    echo "Designing protein based on ${pdb_file}"
+    """
+}
+
+process predictWithAlphaFold {
+    executor 'nim'
+    
+    input:
+    val sequence
+    
+    output:
+    path "alphafold_prediction.pdb"
+
+    script:
+    task.ext.nim = "alphafold2"
+    """
+    echo "Predicting structure with AlphaFold2"
+    """
+}
+
+process predictWithESMFold {
+    executor 'nim'
+    
+    input:
+    val sequence
+    
+    output:
+    path "esmfold_prediction.pdb"
+
+    script:
+    task.ext.nim = "esmfold"
+    """
+    echo "Predicting structure with ESMFold"
+    """
+}
+```
+
+## Input Requirements
+
+### RFDiffusion
+- **Input**: PDB file containing protein structure
+- **Parameters**: 
+  - `params.contigs` - Contigs specification (default: "A20-60/0 50-100")
+  - `params.hotspot_res` - Hotspot residues (default: ["A50","A51","A52","A53","A54"])  
+  - `params.diffusion_steps` - Number of diffusion steps (default: 15)
+
+### AlphaFold2/ESMFold
+- **Input**: Protein sequence (from FASTA file or `params.sequence`)
+- **Parameters**: None required
+
+## Health Checks
+
+Test NIM service availability:
+
+```bash
+# RFDiffusion
+curl -v https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate
+
+# AlphaFold2  
+curl -v https://health.api.nvidia.com/v1/biology/deepmind/alphafold2/predict
+
+# ESMFold
+curl -v https://health.api.nvidia.com/v1/biology/meta/esmfold/predict
+```
+
+## Development
+
+### Building
+
 ```bash
 make assemble
 ```
 
-## Testing with Nextflow
+### Testing
 
-The plugin can be tested without a local Nextflow installation:
+```bash
+make test
+```
 
-1. Build and install the plugin to your local Nextflow installation: `make install`
-2. Run a pipeline with the plugin: `nextflow run hello -plugins nf-nim@0.1.0`
+### Installing Locally
 
-## Publishing
+```bash
+make install
+```
 
-Plugins can be published to a central plugin registry to make them accessible to the Nextflow community. 
+## License
 
+This project is licensed under the Apache License 2.0 - see the [COPYING](COPYING) file for details.
 
-Follow these steps to publish the plugin to the Nextflow Plugin Registry:
+## Contributing
 
-1. Create a file named `$HOME/.gradle/gradle.properties`, where $HOME is your home directory. Add the following properties:
-
-    * `pluginRegistry.accessToken`: Your Nextflow Plugin Registry access token. 
-
-2. Use the following command to package and create a release for your plugin on GitHub: `make release`.
-
-
-> [!NOTE]
-> The Nextflow Pluging registry is currently avaialable as private beta technology. Contact info@nextflow.io to learn how to get access to it.
-> 
+Contributions are welcome! Please see the development guidelines in the source code for more information.

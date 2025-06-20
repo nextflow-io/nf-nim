@@ -12,7 +12,7 @@ nextflowPlugin {
     extensionPoints = [
         'seqeralabs.plugin.NfNIMExtension',
         'seqeralabs.plugin.NfNIMFactory',
-        'seqeralabs.plugin.RFDiffusionExecutor'
+        'seqeralabs.plugin.NIMExecutor'
     ]
 
     publishing {
