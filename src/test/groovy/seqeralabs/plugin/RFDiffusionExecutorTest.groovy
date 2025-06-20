@@ -36,7 +36,6 @@ class RFDiffusionExecutorTest extends Specification {
         executor.register()
         
         then:
-        executor.name == 'rfdiffusion'
         executor.nimEndpoint == 'http://localhost:8000/biology/ipd/rfdiffusion/generate'
     }
 

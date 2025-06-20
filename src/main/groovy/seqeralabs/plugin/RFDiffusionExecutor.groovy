@@ -41,8 +41,7 @@ import java.time.Duration
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
 @Slf4j
-@CompileStatic
-@ServiceName('rfdiffusion')
+@ServiceName('rfdiffusion')  
 class RFDiffusionExecutor extends Executor implements ExtensionPoint {
 
     private String nimEndpoint
@@ -60,7 +59,7 @@ class RFDiffusionExecutor extends Executor implements ExtensionPoint {
 
     @Override
     protected TaskMonitor createTaskMonitor() {
-        return new TaskPollingMonitor(session, name, 100)
+        return TaskPollingMonitor.create(session, name, 100)
     }
 
     @Override
@@ -71,7 +70,6 @@ class RFDiffusionExecutor extends Executor implements ExtensionPoint {
     /**
      * Task handler for RFDiffusion NIM requests
      */
-    @CompileStatic
     static class RFDiffusionTaskHandler extends TaskHandler {
 
         private final RFDiffusionExecutor executor
@@ -113,7 +111,7 @@ class RFDiffusionExecutor extends Executor implements ExtensionPoint {
         boolean checkIfCompleted() {
             if (completed) {
                 if (exitStatus == 0) {
-                    status = TaskStatus.COMPLETED
+                    status = TaskStatus.SUCCEEDED
                 } else {
                     status = TaskStatus.FAILED
                 }
@@ -126,10 +124,9 @@ class RFDiffusionExecutor extends Executor implements ExtensionPoint {
         void kill() {
             completed = true
             exitStatus = 130 // SIGINT
-            status = TaskStatus.CANCELLED
+            status = TaskStatus.ABORTED
         }
 
-        @Override
         int getExitStatus() {
             return exitStatus
         }
