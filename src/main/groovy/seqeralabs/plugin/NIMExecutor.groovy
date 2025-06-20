@@ -252,19 +252,8 @@ class NIMExecutor extends Executor implements ExtensionPoint {
                 }
             }
 
-            // If no PDB file found, use default example (1R42.pdb content)
-            log.warn "No PDB input file found, using default example structure"
-            return getDefaultPdbContent()
-        }
-
-        private String getDefaultPdbContent() {
-            // This would contain a small subset of 1R42.pdb ATOM lines
-            // For now, return a minimal example
-            return '''ATOM      1  N   ALA A  20      -8.901   4.127  -0.555  1.00 11.99           N  
-ATOM      2  CA  ALA A  20      -8.608   3.135  -1.618  1.00 11.82           C  
-ATOM      3  C   ALA A  20      -7.117   2.964  -1.897  1.00 11.75           C  
-ATOM      4  O   ALA A  20      -6.632   1.849  -2.088  1.00 12.05           O  
-ATOM      5  CB  ALA A  20      -9.303   3.421  -2.953  1.00 11.56           C'''
+            // No PDB file found - require proper input
+            throw new IllegalArgumentException("No PDB input file found. Please provide a PDB file as input to the process.")
         }
     }
 } 
