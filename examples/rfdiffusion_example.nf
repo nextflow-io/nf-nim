@@ -16,20 +16,10 @@ params.diffusion_steps = 15
 workflow {
     // Example 1: RFDiffusion protein design
     rfdiffusionTask(file(params.pdb_file, exists: true))
-
-    // Example 2: AlphaFold2 structure prediction
-    if (params.sequence) {
-        alphafold2Task(params.sequence)
-    }
-
-    // Example 3: ESMFold structure prediction 
-    if (params.sequence) {
-        esmfoldTask(params.sequence)
-    }
 }
 
 process rfdiffusionTask {
-    executor 'nim'
+    // executor "nim"
 
     input:
     path pdb_file
@@ -48,43 +38,5 @@ process rfdiffusionTask {
     echo "Using contigs: ${params.contigs}"
     echo "Hotspot residues: ${params.hotspot_res}"
     echo "Diffusion steps: ${params.diffusion_steps}"
-    """
-}
-
-process alphafold2Task {
-    executor 'nim'
-
-    input:
-    val sequence
-
-    output:
-    path "predicted_structure.pdb"
-
-    script:
-    task.ext.nim = "alphafold2"
-
-    """
-    # The NIM executor will handle the AlphaFold2 API call
-    echo "Running AlphaFold2 structure prediction"
-    echo "Sequence length: \$(echo '${sequence}' | wc -c)"
-    """
-}
-
-process esmfoldTask {
-    executor 'nim'
-
-    input:
-    val sequence
-
-    output:
-    path "predicted_structure.pdb"
-
-    script:
-    task.ext.nim = "esmfold"
-
-    """
-    # The NIM executor will handle the ESMFold API call  
-    echo "Running ESMFold structure prediction"
-    echo "Sequence length: \$(echo '${sequence}' | wc -c)"
     """
 }

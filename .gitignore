@@ -2,6 +2,7 @@
 .gradle
 .idea
 .nextflow*
+.lineage/
 
 # Ignore Gradle build output directory
 build
