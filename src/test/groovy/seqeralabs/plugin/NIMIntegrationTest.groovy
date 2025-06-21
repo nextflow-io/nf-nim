@@ -57,6 +57,35 @@ class NIMIntegrationTest extends Specification {
         }
     }
 
+    /**
+     * Download and process PDB file using the same logic as the working NVIDIA script
+     * @param pdbUrl The URL to download the PDB file from
+     * @return The processed PDB data string
+     */
+    static String downloadAndProcessPdb(String pdbUrl = "https://files.rcsb.org/download/1R42.pdb") {
+        println("Downloading PDB file from RCSB...")
+        
+        // Use the exact same command as the working script: curl | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", $0}'
+        def pdbCommand = ['bash', '-c', "curl -s ${pdbUrl} | grep '^ATOM' | head -n 400 | awk '{printf \"%s\\\\n\", \$0}'".toString()]
+        def pdbProcess = new ProcessBuilder(pdbCommand).start()
+        def pdbData = pdbProcess.inputStream.text.trim()
+        def pdbExitCode = pdbProcess.waitFor()
+        
+        if (pdbExitCode != 0) {
+            throw new RuntimeException("Failed to download PDB file")
+        }
+        
+        println("PDB data length: ${pdbData.length()}")
+        println("PDB data first 200 chars: ${pdbData.take(200)}")
+        
+        // Convert literal \n characters to actual newlines for JSON
+        def processedPdbData = pdbData.replace('\\n', '\n')
+        println("Processed PDB data first 200 chars: ${processedPdbData.take(200)}")
+        
+        return processedPdbData
+    }
+
+
     @Requires({ System.getenv('NVIDIA_API_KEY') || System.getenv('NVCF_RUN_KEY') })
     def 'should successfully call RFDiffusion API endpoint'() {
         given:
@@ -65,9 +94,21 @@ class NIMIntegrationTest extends Specification {
         def taskRun = Mock(TaskRun) {
             getWorkDir() >> workDir
         }
-        def handler = new NIMTaskHandler(taskRun, executor)
         
-        when:
+        when: 'Step 1: Download the PDB file'
+        println("Step 1: Downloading and processing PDB file...")
+        def pdbData = downloadAndProcessPdb()
+        
+        then: 'PDB file should be downloaded and processed correctly'
+        pdbData != null
+        pdbData.length() > 0
+        pdbData.contains('ATOM')
+        println("PDB data downloaded successfully, length: ${pdbData.length()}")
+        
+        when: 'Step 2: Use the TaskHandler class to make the API call with PDB data'
+        println("Step 2: Creating TaskHandler and making API call...")
+        def handler = new NIMTaskHandler(taskRun, executor)
+        handler.setPdbData(pdbData)
         handler.submit()
         
         then:
@@ -79,8 +120,8 @@ class NIMIntegrationTest extends Specification {
         then:
         handler.status == TaskStatus.RUNNING
         
-        when:
-        // Wait for the API call to complete (with timeout)
+        when: 'Step 3: Verify the API call completed correctly'
+        println("Step 3: Waiting for API call to complete...")
         def completed = false
         for (int i = 0; i < 120; i++) { // 2 minutes max
             if (handler.checkIfCompleted()) {
@@ -98,12 +139,31 @@ class NIMIntegrationTest extends Specification {
         def resultFile = workDir.resolve('nim_result.json')
         resultFile.toFile().exists()
         
-        and: 'result file should contain valid JSON'
+        and: 'result file should contain valid JSON response'
         def resultText = resultFile.text
         resultText.contains('"output_pdb"') || resultText.contains('"error"') || resultText.contains('"detail"') // Either success or documented error
+        println("API call completed successfully with response length: ${resultText.length()}")
         
         cleanup:
         workDir.toFile().deleteDir()
+    }
+
+    def 'should download and process PDB file correctly'() {
+        when: 'downloading PDB file using the same logic as NVIDIA script'
+        def pdbData = downloadAndProcessPdb()
+        
+        then: 'PDB data should be processed correctly'
+        pdbData != null
+        pdbData.length() > 0
+        pdbData.contains('ATOM')
+        pdbData.contains('\n')  // Should have actual newlines after processing
+        
+        and: 'should have expected structure'
+        def lines = pdbData.split('\n')
+        lines.length <= 400  // Should be limited to 400 lines max
+        lines.every { it.startsWith('ATOM') }  // All lines should be ATOM records
+        
+        println("PDB download test passed - processed ${lines.length} ATOM records")
     }
 
     @Requires({ System.getenv('NVIDIA_API_KEY') || System.getenv('NVCF_RUN_KEY') })
@@ -296,6 +356,57 @@ class NIMIntegrationTest extends Specification {
         
         then:
         response.statusCode() >= 200 && response.statusCode() < 500  // Any response means connectivity works
+    }
+
+    @Requires({ System.getenv('NVIDIA_API_KEY') || System.getenv('NVCF_RUN_KEY') })
+    def 'should make API call with provided PDB data'() {
+        given:
+        def executor = createRealExecutor()
+        def workDir = Files.createTempDirectory('nim-integration-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        
+        and: 'pre-downloaded PDB data'
+        def pdbData = downloadAndProcessPdb()
+        
+        when: 'creating TaskHandler with PDB data and making API call'
+        def handler = new NIMTaskHandler(taskRun, executor)
+        handler.setPdbData(pdbData)
+        handler.submit()
+        
+        then:
+        handler.status == TaskStatus.SUBMITTED
+        
+        when:
+        handler.checkIfRunning()
+        
+        then:
+        handler.status == TaskStatus.RUNNING
+        
+        when:
+        // Wait for API call completion
+        def completed = false
+        for (int i = 0; i < 120; i++) {
+            if (handler.checkIfCompleted()) {
+                completed = true
+                break
+            }
+            Thread.sleep(1000)
+        }
+        
+        then:
+        completed == true
+        handler.status == TaskStatus.COMPLETED
+        
+        and: 'should produce valid API response'
+        def resultFile = workDir.resolve('nim_result.json')
+        resultFile.toFile().exists()
+        def resultText = resultFile.text
+        resultText.length() > 0
+        
+        cleanup:
+        workDir.toFile().deleteDir()
     }
 
     private NIMExecutor createRealExecutor() {

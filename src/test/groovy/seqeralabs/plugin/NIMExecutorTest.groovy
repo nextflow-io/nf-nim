@@ -40,7 +40,7 @@ class NIMExecutorTest extends Specification {
         executor.register()
         
         then:
-        executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         executor.nimEndpoints.size() == 1
         executor.httpClient instanceof HttpClient
     }
@@ -110,7 +110,7 @@ class NIMExecutorTest extends Specification {
         executor.register()
         
         then:
-        executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         executor.nimEndpoints.size() == 1
     }
 
@@ -125,11 +125,10 @@ class NIMExecutorTest extends Specification {
         executor.register()
         
         then:
-        executor.nimEndpoints['rfdiffusion'] == 'https://api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
+        executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
         executor.nimEndpoints.size() == 1
     }
 
-    @PendingFeature(reason = "Multiple custom services support not yet implemented")
     def 'should add multiple custom services'() {
         given:
         def session = Mock(Session)

@@ -37,10 +37,19 @@ class NIMTaskHandler extends TaskHandler {
     private final NIMExecutor executor
     private volatile boolean completed = false
     private volatile int exitStatus = 0
+    private String pdbData = null
 
     NIMTaskHandler(TaskRun task, NIMExecutor executor) {
         super(task)
         this.executor = executor
+    }
+
+    /**
+     * Set PDB data to be used in the API call
+     * @param pdbData The processed PDB data string
+     */
+    void setPdbData(String pdbData) {
+        this.pdbData = pdbData
     }
 
     @Override
@@ -50,7 +59,11 @@ class NIMTaskHandler extends TaskHandler {
         // Execute the NIM task asynchronously
         Thread.start {
             try {
-                executeNIMTask()
+                if (pdbData) {
+                    executeNIMTaskWithPdb(pdbData)
+                } else {
+                    executeNIMTask()
+                }
             } catch (Exception e) {
                 println("Error executing NIM task: ${e.message}")
                 completed = true
@@ -85,7 +98,11 @@ class NIMTaskHandler extends TaskHandler {
         exitStatus = 130 // SIGINT
     }
 
-    private void executeNIMTask() {
+    /**
+     * Execute NIM task with provided PDB data
+     * @param pdbData The processed PDB data to use in the API call
+     */
+    private void executeNIMTaskWithPdb(String pdbData) {
         // Check for API key
         def apiKey = System.getenv('NVCF_RUN_KEY')
         if (!apiKey) {
@@ -104,37 +121,12 @@ class NIMTaskHandler extends TaskHandler {
         }
         
         println("Using endpoint: ${endpoint}")
-
         println("Executing NIM task: rfdiffusion")
 
         try {
-            // Download and process PDB file exactly like the working example
-            println("Downloading PDB file from RCSB...")
-            def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
-            
-            // Use the exact same command as the working script: curl | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", $0}'
-            def pdbCommand = ['bash', '-c', "curl -s ${pdbUrl} | grep '^ATOM' | head -n 400 | awk '{printf \"%s\\\\n\", \$0}'".toString()]
-            def pdbProcess = new ProcessBuilder(pdbCommand).start()
-            def pdbData = pdbProcess.inputStream.text.trim()
-            def pdbExitCode = pdbProcess.waitFor()
-            
-            if (pdbExitCode != 0) {
-                println("Failed to download PDB file")
-                completed = true
-                exitStatus = 1
-                return
-            }
-            
             // Build request body with format matching the working example
-            println("PDB data length: ${pdbData.length()}")
-            println("PDB data first 200 chars: ${pdbData.take(200)}")
-            
-            // Convert literal \n characters to actual newlines for JSON
-            def processedPdbData = pdbData.replace('\\n', '\n')
-            println("Processed PDB data first 200 chars: ${processedPdbData.take(200)}")
-            
             def requestData = [
-                input_pdb: processedPdbData,
+                input_pdb: pdbData,
                 contigs: "A20-60/0 50-100",
                 hotspot_res: ["A50", "A51", "A52", "A53", "A54"],
                 diffusion_steps: 15
@@ -187,6 +179,54 @@ class NIMTaskHandler extends TaskHandler {
         } catch (Exception e) {
             println("Error executing NIM request: ${e.message}")
             e.printStackTrace()  // More detailed error info
+            completed = true
+            exitStatus = 1
+        }
+    }
+
+    /**
+     * Legacy method that downloads PDB and makes API call (for backwards compatibility)
+     * Note: This method should not be used in new code - use setPdbData() instead
+     */
+    private void executeNIMTask() {
+        // Check for API key first to fail fast
+        def apiKey = System.getenv('NVCF_RUN_KEY')
+        if (!apiKey) {
+            println("No API key found. Set NVCF_RUN_KEY environment variable.")
+            completed = true
+            exitStatus = 1
+            return
+        }
+
+        def endpoint = executor.nimEndpoints['rfdiffusion']
+        if (!endpoint) {
+            println("No endpoint configured for rfdiffusion")
+            completed = true
+            exitStatus = 1
+            return
+        }
+        
+        // For backwards compatibility, we'll use a simple inline PDB download
+        // In practice, callers should use setPdbData() with pre-downloaded data
+        try {
+            println("Downloading PDB file from RCSB...")
+            def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
+            
+            // Use the exact same command as the working script
+            def pdbCommand = ['bash', '-c', "curl -s ${pdbUrl} | grep '^ATOM' | head -n 400 | awk '{printf \"%s\\\\n\", \$0}'".toString()]
+            def pdbProcess = new ProcessBuilder(pdbCommand).start()
+            def pdbData = pdbProcess.inputStream.text.trim()
+            def pdbExitCode = pdbProcess.waitFor()
+            
+            if (pdbExitCode != 0) {
+                throw new RuntimeException("Failed to download PDB file")
+            }
+            
+            // Convert literal \n characters to actual newlines for JSON
+            def processedPdbData = pdbData.replace('\\n', '\n')
+            executeNIMTaskWithPdb(processedPdbData)
+        } catch (Exception e) {
+            println("Error downloading PDB file: ${e.message}")
             completed = true
             exitStatus = 1
         }
