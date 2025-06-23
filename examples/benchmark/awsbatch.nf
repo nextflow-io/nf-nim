@@ -36,7 +36,7 @@ workflow {
         params.sequence_7ONG_A
     ])
     
-    openfold_results = openfold(sequences_ch)
+    alphafold_results = alphafold(sequences_ch)
 }
 
 process rfdiffusion {
@@ -69,21 +69,11 @@ process rfdiffusion {
         inference.num_designs=1 \\
         denoiser.noise_scale_ca=1 \\
         denoiser.noise_scale_frame=1 \\
-        > rfdiffusion_log.txt 2>&1
-    
-    # Move output to expected filename
-    if [ -f "rfdiffusion_output_0.pdb" ]; then
-        mv rfdiffusion_output_0.pdb rfdiffusion_output.pdb
-    elif [ -f "rfdiffusion_output.pdb" ]; then
-        echo "Output already has correct name"
-    else
-        echo "Warning: Expected output file not found, creating placeholder"
-        echo "REMARK RFDiffusion run completed but output file not found" > rfdiffusion_output.pdb
-    fi
+        > rfdiffusion_log.txt 
     """
 }
 
-process openfold {
+process alphafold {
     container 'deepmind/alphafold:latest'
     
     publishDir 'results/openfold', mode: 'copy'
@@ -112,19 +102,7 @@ process openfold {
         --output_dir=. \\
         --use_gpu_relax=false \\
         --logtostderr \\
-        > openfold_log_${seq_hash}.txt 2>&1 || true
-    
-    # Alternative: Use a simpler structure prediction if full AlphaFold is not available
-    if [ ! -f "*/*.pdb" ]; then
-        echo "Full AlphaFold run failed or not configured, creating placeholder structure"
-        echo "REMARK OpenFold/AlphaFold prediction for sequence: ${sequence}" > openfold_output_${seq_hash}.pdb
-        echo "REMARK This is a placeholder - configure proper AlphaFold database paths" >> openfold_output_${seq_hash}.pdb
-        echo "ATOM      1  CA  ALA A   1      20.154  16.967  18.587  1.00 50.00           C" >> openfold_output_${seq_hash}.pdb
-        echo "END" >> openfold_output_${seq_hash}.pdb
-    else
-        # Move actual results to expected location
-        find . -name "*.pdb" -exec cp {} openfold_output_${seq_hash}.pdb \\;
-    fi
+        > openfold_log_${seq_hash}.txt 
     """
 }
 
