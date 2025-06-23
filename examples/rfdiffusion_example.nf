@@ -11,6 +11,11 @@ params.pdb_file        = "https://files.rcsb.org/download/1R42.pdb"
 // params.pdb_file        = "https://files.rcsb.org/download/2P4E.pdb"
 params.sequence        = "MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNTNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKNL"
 
+// OpenFold example sequences
+params.sequence_7WJ0_A = "SGSMKTAISLPDETFDRVSR RASELGMSRSEFFTKAAQRYLHELDAQLLLTGQ"
+params.sequence_7WBN_A = "GGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC"
+params.sequence_7ONG_A = "GSHMNGLTYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPL"
+
 // RFDiffusion parameters
 params.contigs         = "A20-60/0 50-100"
 params.hotspot_res     = ["A50", "A51", "A52", "A53", "A54"]
@@ -21,7 +26,9 @@ workflow {
     curl_rfdiffusion([file(params.pdb_file, exists: true), params.contigs, params.hotspot_res, params.diffusion_steps])
     
     // Example 2: OpenFold protein structure prediction
-    curl_openfold(params.sequence)
+    ch_sequences = channel.from([params.sequence, params.sequence_7WJ0_A, params.sequence_7WBN_A, params.sequence_7ONG_A])
+
+    curl_openfold(ch_sequences)
 }
 
 process nimRFDiffusion {
@@ -99,25 +106,6 @@ process curl_openfold {
         -H "Authorization: Bearer \$NVCF_RUN_KEY" \
         -H "NVCF-POLL-SECONDS: 300" \
         -d "\$request" > openfold_output.json
-    """
-}
-
-// TODO
-process nimOpenFold {
-    executor 'nim'
-    ext nim: 'openfold2'
-
-    input:
-    val sequence
-
-    output:
-    path "openfold_structure.json"
-
-    script:
-    """
-    # The NIM executor will handle the actual API call to OpenFold2
-    # Input sequence is automatically passed
-    echo "Running OpenFold2 structure prediction for sequence: ${sequence}"
     """
 }
 
