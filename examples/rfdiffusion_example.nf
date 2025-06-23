@@ -6,6 +6,9 @@
  */
 
 params.pdb_file        = "https://files.rcsb.org/download/1R42.pdb"
+// PCSK9
+// https://www.rcsb.org/structure/2P4E
+// params.pdb_file        = "https://files.rcsb.org/download/2P4E.pdb"
 params.sequence        = "MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNTNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKNL"
 
 // RFDiffusion parameters

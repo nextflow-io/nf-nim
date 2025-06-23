@@ -6,6 +6,7 @@ Pros
 | --------- | ------------------------------------ | -------------------------- |
 | It's done | Same as local but no curl dependency | Log the container, version |
 |           |                                      | easy queue throttling      |
+|           |                                      | Can log the server api version|
 
 Cons
 
