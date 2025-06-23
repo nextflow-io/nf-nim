@@ -74,7 +74,7 @@ process rfdiffusion {
 }
 
 process alphafold {
-    container 'deepmind/alphafold:latest'
+    container 'nvcr.io/nim/deepmind/alphafold2:latest'
     
     publishDir 'results/openfold', mode: 'copy'
     
