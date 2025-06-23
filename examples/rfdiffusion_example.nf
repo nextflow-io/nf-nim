@@ -19,6 +19,9 @@ params.diffusion_steps = 15
 workflow {
     // Example 1: RFDiffusion protein design
     curl_rfdiffusion([file(params.pdb_file, exists: true), params.contigs, params.hotspot_res, params.diffusion_steps])
+    
+    // Example 2: OpenFold protein structure prediction
+    curl_openfold(params.sequence)
 }
 
 process nimRFDiffusion {
@@ -74,6 +77,49 @@ process curl_rfdiffusion {
     """
 }
 
+process curl_openfold {
+    executor 'local'
+
+    input:
+    val sequence
+
+    output:
+    path "openfold_output.json"
+
+    script:
+    def baseurl = "https://health.api.nvidia.com/v1/biology/openfold/"
+    def URL = "openfold2/predict-structure-from-msa-and-template"
+    """
+    request='{
+        "sequence": "${sequence}"
+    }'
+    
+    curl -s -X POST "${baseurl}${URL}" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer \$NVCF_RUN_KEY" \
+        -H "NVCF-POLL-SECONDS: 300" \
+        -d "\$request" > openfold_output.json
+    """
+}
+
+// TODO
+process nimOpenFold {
+    executor 'nim'
+    ext nim: 'openfold2'
+
+    input:
+    val sequence
+
+    output:
+    path "openfold_structure.json"
+
+    script:
+    """
+    # The NIM executor will handle the actual API call to OpenFold2
+    # Input sequence is automatically passed
+    echo "Running OpenFold2 structure prediction for sequence: ${sequence}"
+    """
+}
+
 // msasearch
-// openfold2
 // evo2-40b
