@@ -67,13 +67,14 @@ process curl_rfdiffusion {
     script:
     def baseurl="https://health.api.nvidia.com/v1/biology/ipd/"
     def URL="rfdiffusion/generate"
+    def hotspot_json = hotspot_res.collect { "\"${it}\"" }.join(',')
     """
     pdb=\$(cat ${pdb_file} | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", \$0}')
     request='{
     "input_pdb": "'"\$pdb"'",
     "contigs": "${contigs}",
-    "hotspot_res": "${hotspot_res}",
-    "diffusion_steps": "${diffusion_steps}"
+    "hotspot_res": [${hotspot_json}],
+    "diffusion_steps": ${diffusion_steps}
     }'
     curl -H 'Content-Type: application/json' \
         -H "Authorization: Bearer \$NVCF_RUN_KEY" \

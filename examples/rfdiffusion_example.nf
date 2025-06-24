@@ -12,9 +12,9 @@ params.pdb_file        = "https://files.rcsb.org/download/1R42.pdb"
 params.sequence        = "MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNTNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKNL"
 
 // OpenFold example sequences
-params.sequence_7WJ0_A = "SGSMKTAISLPDETFDRVSR RASELGMSRSEFFTKAAQRYLHELDAQLLLTGQ"
+params.sequence_7WJ0_A = "SGSMKTAISLPDETFDRVSRRASELGMSRSEFFTKAAQRYLHELDAQLLLTGQ"
 params.sequence_7WBN_A = "GGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC"
-params.sequence_7ONG_A = "GSHMNGLTYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPL"
+params.sequence_7ONG_A = "GSHMNGLTYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRRSGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPLSTRR SGVGVAVLNGLIYAVGGYDGTGYNTHLNSVEAYDPERNEWSLVAPL"
 
 // RFDiffusion parameters
 params.contigs         = "A20-60/0 50-100"
@@ -67,13 +67,14 @@ process curl_rfdiffusion {
     script:
     def baseurl="https://health.api.nvidia.com/v1/biology/ipd/"
     def URL="rfdiffusion/generate"
+    def hotspot_json = hotspot_res.collect { "\"${it}\"" }.join(',')
     """
-    pdb=\$(cat ${pdb_file} | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", \$0}')
+    pdb=\$(cat ${pdb_file} | grep ^ATOM | head -n 400 | awk '{printf "%s\\\\n", \$0}')
     request='{
     "input_pdb": "'"\$pdb"'",
     "contigs": "${contigs}",
-    "hotspot_res": "${hotspot_res}",
-    "diffusion_steps": "${diffusion_steps}"
+    "hotspot_res": [${hotspot_json}],
+    "diffusion_steps": ${diffusion_steps}
     }'
     curl -H 'Content-Type: application/json' \
         -H "Authorization: Bearer \$NVCF_RUN_KEY" \
@@ -96,9 +97,10 @@ process curl_openfold {
     script:
     def baseurl = "https://health.api.nvidia.com/v1/biology/openfold/"
     def URL = "openfold2/predict-structure-from-msa-and-template"
+    def cleaned_sequence = sequence.replaceAll(/\s+/, '')
     """
     request='{
-        "sequence": "${sequence}"
+        "sequence": "${cleaned_sequence}"
     }'
     
     curl -s -X POST "${baseurl}${URL}" \
