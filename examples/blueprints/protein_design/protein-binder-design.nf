@@ -11,7 +11,8 @@
  */
 
 // Default parameters for protein design workflow
-params.target_sequence = "NITEEFYQSTCSAVSKGYLSALRTGWYTSVITIELSNIKKIKCNGTDAKIKLIKQELDKYKNAVTELQLLMQSTPATNNQARGSGSGRSLGFLLGVGSAIASGVAVSKVLHLEGEVNKIKSALLSTNKAVVSLSNGVSVLTSKVLDLKNYIDKQLLPIVNKQSCSIPNIETVIEFQQKNNRLLEITREFSVNAGVTTPVSTYMLTNSELLSLINDMPITNDQKKLMSNNVQIVRQQSYSIMSIIKEEVLAYVVQLPLYGVIDTPCWKLHTSPLCTTNTKEGSNICLTRTDRGWYCDNAGSVSFFPQAETCKVQSNRVFCDTMNSLTLPSEVNLCNVDIFNPKYDCKIMTSKTDVSSSVITSLGAIVSCYGKTKCTASNKNRGIIKTFSNGCDYVSNKGVDTVSVGNTLYYVNKQEGKSLYVKGEPIINFYDPLVFPSDQFDASISQVNEKINQSLAFIRKSDELLSAIGGYIPEAPRDGQAYVRKDGEWVLLSTFLGGLVPRGSHHHHHH"
+params.input = "example_samplesheet.csv"
+params.target_sequence = ""
 
 // RFDiffusion parameters
 params.contigs = "A1-25/0 70-100"
@@ -31,80 +32,92 @@ params.algorithm = "mmseqs2"
 params.pairs_to_process = 5
 
 workflow {
-    // Input channel with target sequence
-    ch_target_sequence = channel.of(params.target_sequence)
+    // Create input channel from samplesheet or fallback to single sequence
+    if (params.input) {
+        ch_input = Channel
+            .fromPath(params.input)
+            .splitCsv(header: true, sep: ',')
+            .map { row -> 
+                def meta = [id: row.id]
+                return tuple(meta, row.sequence)
+            }
+    } else {
+        // Fallback to single sequence with default ID
+        def meta = [id: "target_protein"]
+        ch_input = Channel.of(tuple(meta, params.target_sequence))
+    }
     
     // Step 1: Predict target protein structure with AlphaFold2
-    alphafold2_structure(ch_target_sequence)
+    alphafold2_structure(ch_input)
     
-    // Step 2: Generate protein backbones with RFDiffusion
-    rfdiffusion_binder_design(
-        alphafold2_structure.out.structure,
-        params.contigs,
-        params.hotspot_res,
-        params.diffusion_steps
-    )
+    // // Step 2: Generate protein backbones with RFDiffusion
+    // rfdiffusion_binder_design(
+    //     alphafold2_structure.out.structure,
+    //     params.contigs,
+    //     params.hotspot_res,
+    //     params.diffusion_steps
+    // )
     
-    // Step 3: Generate sequences from backbones with ProteinMPNN
-    proteinmpnn_sequence_design(
-        rfdiffusion_binder_design.out.backbone,
-        params.ca_only,
-        params.use_soluble_model,
-        params.num_seq_per_target,
-        params.sampling_temp
-    )
+    // // Step 3: Generate sequences from backbones with ProteinMPNN
+    // proteinmpnn_sequence_design(
+    //     rfdiffusion_binder_design.out.backbone,
+    //     params.ca_only,
+    //     params.use_soluble_model,
+    //     params.num_seq_per_target,
+    //     params.sampling_temp
+    // )
     
-    // Step 4: Create binder-target pairs and predict complex structures
-    create_binder_target_pairs(
-        proteinmpnn_sequence_design.out.sequences,
-        ch_target_sequence
-    )
+    // // Step 4: Create binder-target pairs and predict complex structures
+    // create_binder_target_pairs(
+    //     proteinmpnn_sequence_design.out.sequences,
+    //     ch_target_sequence
+    // )
     
-    // Step 5: Predict complex structures with AlphaFold2-multimer
-    alphafold2_multimer_prediction(
-        create_binder_target_pairs.out.pairs.take(params.pairs_to_process)
-    )
+    // // Step 5: Predict complex structures with AlphaFold2-multimer
+    // alphafold2_multimer_prediction(
+    //     create_binder_target_pairs.out.pairs.take(params.pairs_to_process)
+    // )
     
-    // Step 6: Assess binding quality and rank results
-    assess_binding_quality(
-        alphafold2_multimer_prediction.out.complex_structures
-    )
+    // // Step 6: Assess binding quality and rank results
+    // assess_binding_quality(
+    //     alphafold2_multimer_prediction.out.complex_structures
+    // )
 }
 
 /*
  * Process 1: AlphaFold2 - Predict target protein structure from sequence
  */
 process alphafold2_structure {
-    tag "$sequence"
+    tag "$meta.id"
     publishDir 'results/alphafold2_structures', mode: 'copy'
     
     input:
-    val sequence
+    tuple val(meta), val(sequence)
     
     output:
-    path "target_structure.pdb", emit: structure
-    path "alphafold2_output.json", emit: metadata
+    tuple val(meta), path("${meta.id}_alphafold2_output.json"), emit: metadata
     
     script:
-    def baseurl = "https://health.api.nvidia.com/v1/biology/alphafold2/"
-    def endpoint = "predict-structure-from-sequence"
+    def baseurl = "https://health.api.nvidia.com/v1/biology/deepmind/alphafold2"
     """
     # Call AlphaFold2 NIM for structure prediction
     request='{
         "sequence": "${sequence}",
-        "algorithm": "${params.algorithm}"
+        "algorithm": "${params.algorithm}",
+        "e_value": 0.0001,
+        "iterations": 1,
+        "databases": ["uniref90", "small_bfd"],
+        "relax_prediction": false,
+        "skip_template_search" : true
     }'
     
-    curl -s -X POST "${baseurl}${endpoint}" \
+    curl -s -X POST "${baseurl}" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer \$NVIDIA_API_KEY" \
         -H "poll-seconds: 900" \
-        -d "\$request" > alphafold2_output.json
+        -d "\$request" > ${meta.id}_alphafold2_output.json
     
-    # Extract the first structure prediction from the response
-    jq -r '.[0]' alphafold2_output.json > target_structure.pdb
-    
-    echo "AlphaFold2 structure prediction completed for sequence length: \$(echo -n '${sequence}' | wc -c)"
+    echo "AlphaFold2 structure prediction completed for ${meta.id} (sequence length: \$(echo -n '${sequence}' | wc -c))"
     """
 }
 
