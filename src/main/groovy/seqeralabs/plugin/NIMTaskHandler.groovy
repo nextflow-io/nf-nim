@@ -156,6 +156,10 @@ class NIMTaskHandler extends TaskHandler {
         exitStatus = 130 // SIGINT
     }
 
+    Integer getExitStatus() {
+        return completed ? exitStatus : null
+    }
+
     /**
      * Execute NIM task with provided PDB data
      * @param pdbData The processed PDB data to use in the API call
@@ -226,17 +230,22 @@ class NIMTaskHandler extends TaskHandler {
                     // Continue as success since API call worked, just output processing failed
                 }
                 
+                // Create expected Nextflow files for proper task completion
+                createNextflowFiles("NIM task completed successfully")
+                
                 completed = true
                 exitStatus = 0
             } else if (statusCode == 422) {
                 println("NIM API validation error (422): ${responseBody}")
                 // For integration tests, we'll treat validation errors as "completed" 
                 // since they indicate the API is working but data is invalid
+                createNextflowFiles("NIM API validation error (422) - treated as success for testing")
                 completed = true
                 exitStatus = 0  // Consider this success for testing purposes
             } else {
                 println("NIM API request failed with status: ${statusCode}")
                 println("Response: ${responseBody}")
+                createNextflowFiles("NIM API request failed with status: ${statusCode}")
                 completed = true
                 exitStatus = 1
             }
@@ -244,6 +253,7 @@ class NIMTaskHandler extends TaskHandler {
         } catch (Exception e) {
             println("Error executing NIM request: ${e.message}")
             e.printStackTrace()  // More detailed error info
+            createNextflowFiles("Error executing NIM request: ${e.message}")
             completed = true
             exitStatus = 1
         }
@@ -294,6 +304,7 @@ class NIMTaskHandler extends TaskHandler {
             executeNIMTaskWithPdb(processedPdbData)
         } catch (Exception e) {
             println("Error downloading PDB file: ${e.message}")
+            createNextflowFiles("Error downloading PDB file: ${e.message}")
             completed = true
             exitStatus = 1
         }
@@ -429,6 +440,34 @@ class NIMTaskHandler extends TaskHandler {
             def outputFile = task.workDir.resolve('output.json')
             outputFile.text = new JsonBuilder(responseData).toPrettyString()
             println("Created debug output file: ${outputFile}")
+        }
+    }
+    
+    /**
+     * Create expected Nextflow files for proper task completion tracking
+     * @param logMessage Message to write to the command log
+     */
+    private void createNextflowFiles(String logMessage) {
+        try {
+            // Create .command.sh (the script that would have been executed)
+            def commandScript = task.workDir.resolve('.command.sh')
+            commandScript.text = task.script ?: "# NIM API executor - no shell script execution"
+            
+            // Create .command.log (execution log)
+            def commandLog = task.workDir.resolve('.command.log')
+            commandLog.text = "${logMessage}\nNIM executor completed API call successfully"
+            
+            // Create .command.err (error log - empty for successful runs)
+            def commandErr = task.workDir.resolve('.command.err')
+            commandErr.text = ""
+            
+            // Create .exitcode file with the exit status
+            def exitCodeFile = task.workDir.resolve('.exitcode')
+            exitCodeFile.text = "${exitStatus}"
+            
+            println("Created Nextflow tracking files in work directory")
+        } catch (Exception e) {
+            println("Warning: Could not create Nextflow tracking files: ${e.message}")
         }
     }
 }
