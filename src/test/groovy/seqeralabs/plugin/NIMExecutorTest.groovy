@@ -41,7 +41,9 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
-        executor.nimEndpoints.size() == 1
+        executor.nimEndpoints['alphafold2'] == 'https://health.api.nvidia.com/v1/biology/deepmind/alphafold2'
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 3
         executor.httpClient instanceof HttpClient
     }
 
@@ -78,7 +80,10 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == customEndpoint
-        executor.nimEndpoints.size() == 1
+        // Should still have default endpoints for other services
+        executor.nimEndpoints['alphafold2'] == 'https://health.api.nvidia.com/v1/biology/deepmind/alphafold2'
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 3
     }
 
     def 'should support custom endpoint configuration'() {
@@ -96,7 +101,10 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == customRFDiffusion
-        executor.nimEndpoints.size() == 1
+        // Should still have default endpoints for other services
+        executor.nimEndpoints['alphafold2'] == 'https://health.api.nvidia.com/v1/biology/deepmind/alphafold2'
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 3
     }
 
     def 'should handle empty config gracefully'() {
@@ -111,7 +119,9 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
-        executor.nimEndpoints.size() == 1
+        executor.nimEndpoints['alphafold2'] == 'https://health.api.nvidia.com/v1/biology/deepmind/alphafold2'
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 3
     }
 
     def 'should handle invalid config gracefully'() {
@@ -126,7 +136,9 @@ class NIMExecutorTest extends Specification {
         
         then:
         executor.nimEndpoints['rfdiffusion'] == 'https://health.api.nvidia.com/v1/biology/ipd/rfdiffusion/generate'
-        executor.nimEndpoints.size() == 1
+        executor.nimEndpoints['alphafold2'] == 'https://health.api.nvidia.com/v1/biology/deepmind/alphafold2'
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 3
     }
 
     def 'should add multiple custom services'() {
@@ -147,6 +159,8 @@ class NIMExecutorTest extends Specification {
         executor.nimEndpoints['rfdiffusion'] == 'http://server1:8080/rfdiffusion'
         executor.nimEndpoints['alphafold2'] == 'http://server2:8080/alphafold2'
         executor.nimEndpoints['custom_service'] == 'http://server3:8080/custom'
-        executor.nimEndpoints.size() == 3
+        // Should still have default openfold endpoint since it wasn't overridden
+        executor.nimEndpoints['openfold'] == 'https://health.api.nvidia.com/v1/biology/openfold'
+        executor.nimEndpoints.size() == 4
     }
 } 

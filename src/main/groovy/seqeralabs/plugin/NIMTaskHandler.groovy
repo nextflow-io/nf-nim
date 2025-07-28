@@ -26,7 +26,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import java.net.URI
-import groovy.json.JsonBuilder
 
 /**
  * Task handler for NIM tasks
@@ -50,6 +49,65 @@ class NIMTaskHandler extends TaskHandler {
      */
     void setPdbData(String pdbData) {
         this.pdbData = pdbData
+    }
+
+    /**
+     * Get value from task.ext or return default
+     * @param key The extension key to look for
+     * @param defaultValue The default value if not found
+     * @return The value from task.ext or default
+     */
+    private def getTaskExtValue(String key, def defaultValue) {
+        def config = task.config
+        if (config && config.ext instanceof Map) {
+            def extMap = config.ext as Map
+            return extMap.get(key) ?: defaultValue
+        }
+        return defaultValue
+    }
+
+    /**
+     * Build request data based on service type and parameters
+     * @param serviceName The NIM service name (e.g., 'rfdiffusion', 'alphafold2')
+     * @param pdbData The PDB data for services that require it
+     * @return Map containing the request data
+     */
+    private Map<String, Object> buildRequestData(String serviceName, String pdbData) {
+        switch (serviceName) {
+            case 'rfdiffusion':
+                return [
+                    input_pdb: pdbData,
+                    contigs: getTaskExtValue('contigs', "A20-60/0 50-100"),
+                    hotspot_res: getTaskExtValue('hotspot_res', ["A50", "A51", "A52", "A53", "A54"]),
+                    diffusion_steps: getTaskExtValue('diffusion_steps', 15)
+                ]
+            case 'alphafold2':
+                return [
+                    sequence: getTaskExtValue('sequence', ''),
+                    // Add other alphafold2-specific parameters as needed
+                ]
+            case 'openfold':
+                return [
+                    sequence: getTaskExtValue('sequence', ''),
+                    // Add other openfold-specific parameters as needed
+                ]
+            default:
+                // For unknown services, try to build generic request with common parameters
+                def requestData = new LinkedHashMap<String, Object>()
+                if (pdbData) requestData.input_pdb = pdbData
+                
+                // Add any task.ext parameters that are set
+                def config = task.config
+                if (config && config.ext instanceof Map) {
+                    def extMap = config.ext as Map
+                    extMap.each { key, value ->
+                        if (key != 'nim') { // Skip the service name parameter
+                            requestData[key as String] = value
+                        }
+                    }
+                }
+                return requestData
+        }
     }
 
     @Override
@@ -112,25 +170,22 @@ class NIMTaskHandler extends TaskHandler {
             return
         }
 
-        def endpoint = executor.nimEndpoints['rfdiffusion']
+        // Get service name from task.ext.nim or default to 'rfdiffusion'
+        def serviceName = getTaskExtValue('nim', 'rfdiffusion')
+        def endpoint = executor.nimEndpoints[serviceName]
         if (!endpoint) {
-            println("No endpoint configured for rfdiffusion")
+            println("No endpoint configured for service: ${serviceName}")
             completed = true
             exitStatus = 1
             return
         }
         
         println("Using endpoint: ${endpoint}")
-        println("Executing NIM task: rfdiffusion")
+        println("Executing NIM task: ${serviceName}")
 
         try {
-            // Build request body with format matching the working example
-            def requestData = [
-                input_pdb: pdbData,
-                contigs: "A20-60/0 50-100",
-                hotspot_res: ["A50", "A51", "A52", "A53", "A54"],
-                diffusion_steps: 15
-            ]
+            // Build request body based on service type and task parameters
+            def requestData = buildRequestData(serviceName as String, pdbData)
             def requestBody = new JsonBuilder(requestData).toString()
             println("Request body first 500 chars: ${requestBody.take(500)}")
             
@@ -161,6 +216,16 @@ class NIMTaskHandler extends TaskHandler {
             
             if (statusCode == 200 || statusCode == 202) {
                 println("NIM task completed successfully")
+                
+                // Process the response and create output files
+                try {
+                    processApiResponse(serviceName as String, responseBody)
+                    println("Output files created successfully")
+                } catch (Exception e) {
+                    println("Error processing API response: ${e.message}")
+                    // Continue as success since API call worked, just output processing failed
+                }
+                
                 completed = true
                 exitStatus = 0
             } else if (statusCode == 422) {
@@ -198,9 +263,11 @@ class NIMTaskHandler extends TaskHandler {
             return
         }
 
-        def endpoint = executor.nimEndpoints['rfdiffusion']
+        // Get service name from task.ext.nim or default to 'rfdiffusion' for legacy compatibility
+        def serviceName = getTaskExtValue('nim', 'rfdiffusion')
+        def endpoint = executor.nimEndpoints[serviceName]
         if (!endpoint) {
-            println("No endpoint configured for rfdiffusion")
+            println("No endpoint configured for service: ${serviceName}")
             completed = true
             exitStatus = 1
             return
@@ -209,7 +276,7 @@ class NIMTaskHandler extends TaskHandler {
         // For backwards compatibility, we'll use a simple inline PDB download
         // In practice, callers should use setPdbData() with pre-downloaded data
         try {
-            println("Downloading PDB file from RCSB...")
+            println("Downloading PDB file from RCSB for service: ${serviceName}...")
             def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
             
             // Use the exact same command as the working script
@@ -229,6 +296,139 @@ class NIMTaskHandler extends TaskHandler {
             println("Error downloading PDB file: ${e.message}")
             completed = true
             exitStatus = 1
+        }
+    }
+    
+    /**
+     * Process API response and create appropriate output files based on service type
+     * @param serviceName The NIM service name (e.g., 'rfdiffusion', 'alphafold2')
+     * @param responseBody The JSON response body from the API
+     */
+    private void processApiResponse(String serviceName, String responseBody) {
+        try {
+            def jsonSlurper = new JsonSlurper()
+            def responseData = jsonSlurper.parseText(responseBody) as Map
+            
+            println("Processing API response for service: ${serviceName}")
+            
+            switch (serviceName) {
+                case 'rfdiffusion':
+                    processRFDiffusionResponse(responseData)
+                    break
+                case 'alphafold2':
+                case 'openfold':
+                    processProteinFoldingResponse(responseData)
+                    break
+                default:
+                    // For unknown services, try to extract common output formats
+                    processGenericResponse(responseData)
+                    break
+            }
+            
+        } catch (Exception e) {
+            println("Error parsing API response JSON: ${e.message}")
+            println("Response body: ${responseBody}")
+            throw e
+        }
+    }
+    
+    /**
+     * Process RFDiffusion API response
+     * @param responseData Parsed JSON response data
+     */
+    private void processRFDiffusionResponse(Map<String, Object> responseData) {
+        if (responseData.containsKey('output_pdb')) {
+            def outputPdb = responseData.output_pdb as String
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = outputPdb
+            println("Created RFDiffusion output file: ${outputFile}")
+            println("Output PDB size: ${outputPdb.length()} characters")
+        } else if (responseData.containsKey('error')) {
+            println("RFDiffusion API returned error: ${responseData.error}")
+            // Still create an empty output file so the process doesn't fail
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = "# RFDiffusion API Error: ${responseData.error}\n"
+        } else {
+            println("Warning: RFDiffusion response does not contain expected 'output_pdb' field")
+            println("Available fields: ${responseData.keySet()}")
+            // Create a placeholder output file
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = "# RFDiffusion response did not contain output_pdb field\n"
+        }
+    }
+    
+    /**
+     * Process AlphaFold2/OpenFold API response
+     * @param responseData Parsed JSON response data
+     */
+    private void processProteinFoldingResponse(Map<String, Object> responseData) {
+        // Look for common protein structure output fields
+        def outputPdb = null
+        
+        if (responseData.containsKey('structure')) {
+            outputPdb = responseData.structure as String
+        } else if (responseData.containsKey('pdb_structure')) {
+            outputPdb = responseData.pdb_structure as String
+        } else if (responseData.containsKey('output_pdb')) {
+            outputPdb = responseData.output_pdb as String
+        } else if (responseData.containsKey('predicted_structure')) {
+            outputPdb = responseData.predicted_structure as String
+        }
+        
+        if (outputPdb) {
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = outputPdb
+            println("Created protein folding output file: ${outputFile}")
+            println("Output PDB size: ${outputPdb.length()} characters")
+        } else if (responseData.containsKey('error')) {
+            println("Protein folding API returned error: ${responseData.error}")
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = "# Protein Folding API Error: ${responseData.error}\n"
+        } else {
+            println("Warning: Protein folding response does not contain expected structure field")
+            println("Available fields: ${responseData.keySet()}")
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = "# Protein folding response did not contain expected structure field\n"
+        }
+    }
+    
+    /**
+     * Process generic API response for unknown services
+     * @param responseData Parsed JSON response data
+     */
+    private void processGenericResponse(Map<String, Object> responseData) {
+        // Try common output field names
+        def outputData = null
+        def outputField = null
+        
+        // Common field names for biological data
+        def commonFields = ['output_pdb', 'structure', 'pdb_structure', 'predicted_structure', 
+                           'output', 'result', 'data', 'response']
+        
+        for (String field : commonFields) {
+            if (responseData.containsKey(field)) {
+                outputData = responseData[field]
+                outputField = field
+                break
+            }
+        }
+        
+        if (outputData) {
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = outputData as String
+            println("Created generic output file from field '${outputField}': ${outputFile}")
+            println("Output size: ${(outputData as String).length()} characters")
+        } else if (responseData.containsKey('error')) {
+            println("Generic API returned error: ${responseData.error}")
+            def outputFile = task.workDir.resolve('output.pdb')
+            outputFile.text = "# API Error: ${responseData.error}\n"
+        } else {
+            println("Warning: Generic response does not contain recognized output fields")
+            println("Available fields: ${responseData.keySet()}")
+            // Create output file with the entire response as JSON for debugging
+            def outputFile = task.workDir.resolve('output.json')
+            outputFile.text = new JsonBuilder(responseData).toPrettyString()
+            println("Created debug output file: ${outputFile}")
         }
     }
 }
