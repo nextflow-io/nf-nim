@@ -2,25 +2,22 @@
 nextflow.enable.dsl=2
 
 /*
- * Test workflow for the NIM executor
+ * Test workflow for the NIM executor with dynamic service routing
  */
 
-params.pdb_file = "https://files.rcsb.org/download/1R42.pdb"
+params.pdb_url = "https://files.rcsb.org/download/1R42.pdb"
 
 workflow {
-    // Test RFDiffusion with NIM executor
-    nimRFDiffusion(file(params.pdb_file))
+    // Test RFDiffusion with custom parameters
+    testRFDiffusion()
 }
 
-process nimRFDiffusion {
+process testRFDiffusion {
     executor 'nim'
     
-    input:
-    path pdb_file
-    
     output:
-    path "output.pdb", optional: true
-    path "nim_result.json", optional: true
+    path "output.pdb"
+    path "nim_result.json"
 
     script:
     task.ext.nim = "rfdiffusion"
@@ -33,6 +30,5 @@ process nimRFDiffusion {
     echo "Contigs: ${task.ext.contigs}"
     echo "Hotspot residues: ${task.ext.hotspot_res}"
     echo "Diffusion steps: ${task.ext.diffusion_steps}"
-    echo "PDB file: ${pdb_file}"
     """
 }
