@@ -35,7 +35,7 @@ class NIMTaskHandler extends TaskHandler {
 
     private final NIMExecutor executor
     private volatile boolean completed = false
-    private volatile int exitStatus = 0
+    private volatile Integer exitStatus = null
     private String pdbData = null
 
     NIMTaskHandler(TaskRun task, NIMExecutor executor) {
@@ -124,8 +124,9 @@ class NIMTaskHandler extends TaskHandler {
                 }
             } catch (Exception e) {
                 println("Error executing NIM task: ${e.message}")
-                completed = true
                 exitStatus = 1
+                task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+                completed = true
             }
         }
         
@@ -144,7 +145,16 @@ class NIMTaskHandler extends TaskHandler {
     @Override
     boolean checkIfCompleted() {
         if (completed) {
-            status = TaskStatus.COMPLETED
+            // Ensure status is set to COMPLETED when task is done
+            if (status != TaskStatus.COMPLETED) {
+                status = TaskStatus.COMPLETED
+                
+                // Safety check: Ensure task.exitStatus is set before reporting completion
+                if (task.exitStatus == Integer.MAX_VALUE && exitStatus != null) {
+                    task.exitStatus = exitStatus
+                    println("Warning: Had to set task.exitStatus in checkIfCompleted() - this should have been set earlier")
+                }
+            }
             return true
         }
         return false
@@ -154,10 +164,11 @@ class NIMTaskHandler extends TaskHandler {
     void kill() {
         completed = true
         exitStatus = 130 // SIGINT
+        task.exitStatus = 130  // Critical: Set the task's exit status for TaskPollingMonitor
     }
 
     Integer getExitStatus() {
-        return completed ? exitStatus : null
+        return exitStatus
     }
 
     /**
@@ -169,8 +180,9 @@ class NIMTaskHandler extends TaskHandler {
         def apiKey = System.getenv('NVCF_RUN_KEY')
         if (!apiKey) {
             println("No API key found. Set NVCF_RUN_KEY environment variable.")
-            completed = true
             exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+            completed = true
             return
         }
 
@@ -179,8 +191,9 @@ class NIMTaskHandler extends TaskHandler {
         def endpoint = executor.nimEndpoints[serviceName]
         if (!endpoint) {
             println("No endpoint configured for service: ${serviceName}")
-            completed = true
             exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+            completed = true
             return
         }
         
@@ -230,32 +243,38 @@ class NIMTaskHandler extends TaskHandler {
                     // Continue as success since API call worked, just output processing failed
                 }
                 
+                // Set exit status first, then create files
+                exitStatus = 0
+                task.exitStatus = 0  // Critical: Set the task's exit status for TaskPollingMonitor
+                
                 // Create expected Nextflow files for proper task completion
                 createNextflowFiles("NIM task completed successfully")
                 
                 completed = true
-                exitStatus = 0
             } else if (statusCode == 422) {
                 println("NIM API validation error (422): ${responseBody}")
                 // For integration tests, we'll treat validation errors as "completed" 
                 // since they indicate the API is working but data is invalid
+                exitStatus = 0  // Consider this success for testing purposes
+                task.exitStatus = 0  // Critical: Set the task's exit status for TaskPollingMonitor
                 createNextflowFiles("NIM API validation error (422) - treated as success for testing")
                 completed = true
-                exitStatus = 0  // Consider this success for testing purposes
             } else {
                 println("NIM API request failed with status: ${statusCode}")
                 println("Response: ${responseBody}")
+                exitStatus = 1
+                task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
                 createNextflowFiles("NIM API request failed with status: ${statusCode}")
                 completed = true
-                exitStatus = 1
             }
 
         } catch (Exception e) {
             println("Error executing NIM request: ${e.message}")
             e.printStackTrace()  // More detailed error info
+            exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             createNextflowFiles("Error executing NIM request: ${e.message}")
             completed = true
-            exitStatus = 1
         }
     }
 
@@ -268,8 +287,9 @@ class NIMTaskHandler extends TaskHandler {
         def apiKey = System.getenv('NVCF_RUN_KEY')
         if (!apiKey) {
             println("No API key found. Set NVCF_RUN_KEY environment variable.")
-            completed = true
             exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+            completed = true
             return
         }
 
@@ -278,8 +298,9 @@ class NIMTaskHandler extends TaskHandler {
         def endpoint = executor.nimEndpoints[serviceName]
         if (!endpoint) {
             println("No endpoint configured for service: ${serviceName}")
-            completed = true
             exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+            completed = true
             return
         }
         
@@ -304,9 +325,10 @@ class NIMTaskHandler extends TaskHandler {
             executeNIMTaskWithPdb(processedPdbData)
         } catch (Exception e) {
             println("Error downloading PDB file: ${e.message}")
+            exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             createNextflowFiles("Error downloading PDB file: ${e.message}")
             completed = true
-            exitStatus = 1
         }
     }
     
@@ -463,7 +485,7 @@ class NIMTaskHandler extends TaskHandler {
             
             // Create .exitcode file with the exit status
             def exitCodeFile = task.workDir.resolve('.exitcode')
-            exitCodeFile.text = "${exitStatus}"
+            exitCodeFile.text = "${exitStatus != null ? exitStatus : 0}"
             
             println("Created Nextflow tracking files in work directory")
         } catch (Exception e) {
