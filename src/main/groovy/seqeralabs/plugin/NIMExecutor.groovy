@@ -50,6 +50,7 @@ import java.security.cert.X509Certificate
 class NIMExecutor extends Executor {
 
     Map<String, String> nimEndpoints
+    Map<String, String> nimApiKeys
     HttpClient httpClient
 
     @Override
@@ -63,13 +64,35 @@ class NIMExecutor extends Executor {
             'openfold': 'https://health.api.nvidia.com/v1/biology/openfold'
         ]
         
-        // Override with custom endpoints from configuration
+        // Initialize API keys map
+        this.nimApiKeys = [:]
+        
+        // Configure endpoints and API keys from configuration
         def nimConfig = session.config?.nim as Map
         if (nimConfig) {
+            // Global API key configuration
+            if (nimConfig.apiKey) {
+                log.info "Using global API key from configuration"
+                // Apply global API key to all services
+                this.nimEndpoints.keySet().each { service ->
+                    this.nimApiKeys[service as String] = nimConfig.apiKey as String
+                }
+            }
+            
+            // Service-specific configurations
             nimConfig.each { service, config ->
-                if (config instanceof Map && config.endpoint) {
-                    this.nimEndpoints[service as String] = config.endpoint as String
-                    log.info "Using custom endpoint for ${service}: ${config.endpoint}"
+                if (config instanceof Map) {
+                    // Custom endpoint
+                    if (config.endpoint) {
+                        this.nimEndpoints[service as String] = config.endpoint as String
+                        log.info "Using custom endpoint for ${service}: ${config.endpoint}"
+                    }
+                    
+                    // Service-specific API key (overrides global)
+                    if (config.apiKey) {
+                        this.nimApiKeys[service as String] = config.apiKey as String
+                        log.info "Using service-specific API key for ${service}"
+                    }
                 }
             }
         }
@@ -91,5 +114,29 @@ class NIMExecutor extends Executor {
     @Override
     TaskMonitor createTaskMonitor() {
         return TaskPollingMonitor.create(session, 'nim', Duration.of('5sec'))
+    }
+    
+    /**
+     * Get the API key for a specific NIM service
+     * Uses fallback hierarchy: service-specific config → global config → environment variable
+     * 
+     * @param service The NIM service name (e.g., 'rfdiffusion')
+     * @return API key string, or null if none found
+     */
+    String getApiKey(String service) {
+        // First try service-specific API key from configuration
+        def serviceKey = nimApiKeys[service]
+        if (serviceKey) {
+            return serviceKey
+        }
+        
+        // Fall back to environment variable
+        def envKey = System.getenv('NVCF_RUN_KEY')
+        if (envKey) {
+            return envKey
+        }
+        
+        // No API key found
+        return null
     }
 } 

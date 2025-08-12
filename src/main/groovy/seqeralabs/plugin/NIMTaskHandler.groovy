@@ -26,6 +26,9 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import java.net.URI
+import java.io.PrintWriter
+import java.nio.file.Files
+import static java.nio.file.StandardOpenOption.*
 
 /**
  * Task handler for NIM tasks
@@ -37,10 +40,133 @@ class NIMTaskHandler extends TaskHandler {
     private volatile boolean completed = false
     private volatile Integer exitStatus = null
     private String pdbData = null
+    private PrintWriter outWriter = null
+    private PrintWriter errWriter = null
+    private PrintWriter logWriter = null
 
     NIMTaskHandler(TaskRun task, NIMExecutor executor) {
         super(task)
         this.executor = executor
+        initializeLogWriters()
+    }
+    
+    /**
+     * Initialize logging writers for .command.out, .command.err, and .command.log files
+     */
+    private void initializeLogWriters() {
+        try {
+            def outFile = task.workDir.resolve('.command.out')
+            def errFile = task.workDir.resolve('.command.err')
+            def logFile = task.workDir.resolve('.command.log')
+            
+            outWriter = new PrintWriter(Files.newBufferedWriter(outFile, CREATE, WRITE, TRUNCATE_EXISTING))
+            errWriter = new PrintWriter(Files.newBufferedWriter(errFile, CREATE, WRITE, TRUNCATE_EXISTING))
+            logWriter = new PrintWriter(Files.newBufferedWriter(logFile, CREATE, WRITE, TRUNCATE_EXISTING))
+        } catch (Exception e) {
+            System.err.println("Warning: Could not initialize log writers: ${e.message}")
+        }
+    }
+    
+    /**
+     * Log a message to stdout and .command.out
+     */
+    private void logOut(String message) {
+        println(message)
+        if (outWriter) {
+            outWriter.println(message)
+            outWriter.flush()
+        }
+        if (logWriter) {
+            logWriter.println(message)
+            logWriter.flush()
+        }
+    }
+    
+    /**
+     * Log a message to stderr and .command.err
+     */
+    private void logErr(String message) {
+        System.err.println(message)
+        if (errWriter) {
+            errWriter.println(message)
+            errWriter.flush()
+        }
+        if (logWriter) {
+            logWriter.println("ERROR: ${message}")
+            logWriter.flush()
+        }
+    }
+    
+    /**
+     * Log a message only to .command.log (for internal tracking)
+     */
+    private void logDebug(String message) {
+        if (logWriter) {
+            logWriter.println("DEBUG: ${message}")
+            logWriter.flush()
+        }
+    }
+    
+    /**
+     * Close all log writers
+     */
+    private void closeLogWriters() {
+        try {
+            outWriter?.close()
+            errWriter?.close()
+            logWriter?.close()
+        } catch (Exception e) {
+            System.err.println("Warning: Error closing log writers: ${e.message}")
+        }
+    }
+    
+    /**
+     * Get dynamic output filename from configuration
+     * @param configKey The configuration key to look for (e.g., 'outputFile', 'resultFile')  
+     * @param defaultName The default filename to use if no config is found
+     * @param serviceName Optional service name for variable substitution
+     * @return The resolved filename
+     */
+    private String getOutputFilename(String configKey, String defaultName, String serviceName = null) {
+        def filename = getTaskExtValue(configKey, defaultName) as String
+        
+        // Support variable substitution
+        if (filename.contains('${')) {
+            filename = filename.replace('${task.name}', task.name ?: 'task')
+            filename = filename.replace('${serviceName}', serviceName ?: 'nim')
+            filename = filename.replace('${task.hash}', task.hashLog ?: 'unknown')
+        }
+        
+        // Sanitize filename - remove/replace invalid characters
+        filename = filename.replaceAll(/[<>:"|?*\\]/, '_')
+        
+        return filename
+    }
+    
+    /**
+     * Get the main output filename (typically PDB file)
+     * @param serviceName The NIM service name
+     * @return The resolved output filename
+     */
+    String getMainOutputFilename(String serviceName) {
+        // Try multiple configuration keys for backward compatibility
+        def filename = getTaskExtValue('outputFile', null)
+        if (!filename) {
+            filename = getTaskExtValue('pdbFile', null)
+        }
+        if (!filename) {
+            filename = 'output.pdb' // Default
+        }
+        return getOutputFilename('outputFile', filename as String, serviceName)
+    }
+    
+    /**
+     * Get the result JSON filename  
+     * @param serviceName The NIM service name
+     * @return The resolved result filename
+     */
+    String getResultFilename(String serviceName) {
+        return getOutputFilename('resultFile', 'nim_result.json', serviceName)
     }
 
     /**
@@ -152,8 +278,11 @@ class NIMTaskHandler extends TaskHandler {
                 // Safety check: Ensure task.exitStatus is set before reporting completion
                 if (task.exitStatus == Integer.MAX_VALUE && exitStatus != null) {
                     task.exitStatus = exitStatus
-                    println("Warning: Had to set task.exitStatus in checkIfCompleted() - this should have been set earlier")
+                    logOut("Warning: Had to set task.exitStatus in checkIfCompleted() - this should have been set earlier")
                 }
+                
+                // Close log writers when task is completed
+                closeLogWriters()
             }
             return true
         }
@@ -165,6 +294,8 @@ class NIMTaskHandler extends TaskHandler {
         completed = true
         exitStatus = 130 // SIGINT
         task.exitStatus = 130  // Critical: Set the task's exit status for TaskPollingMonitor
+        logOut("Task killed with SIGINT")
+        closeLogWriters()
     }
 
     Integer getExitStatus() {
@@ -176,35 +307,38 @@ class NIMTaskHandler extends TaskHandler {
      * @param pdbData The processed PDB data to use in the API call
      */
     private void executeNIMTaskWithPdb(String pdbData) {
-        // Check for API key
-        def apiKey = System.getenv('NVCF_RUN_KEY')
-        if (!apiKey) {
-            println("No API key found. Set NVCF_RUN_KEY environment variable.")
-            exitStatus = 1
-            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
-            completed = true
-            return
-        }
-
         // Get service name from task.ext.nim or default to 'rfdiffusion'
-        def serviceName = getTaskExtValue('nim', 'rfdiffusion')
-        def endpoint = executor.nimEndpoints[serviceName]
-        if (!endpoint) {
-            println("No endpoint configured for service: ${serviceName}")
+        String serviceName = getTaskExtValue('nim', 'rfdiffusion') as String
+        logDebug("Starting NIM task execution with service: ${serviceName}")
+        
+        // Check for API key using the executor's API key resolution
+        def apiKey = executor.getApiKey(serviceName)
+        if (!apiKey) {
+            logErr("No API key found for service '${serviceName}'. Configure nim.apiKey or nim.${serviceName}.apiKey, or set NVCF_RUN_KEY environment variable.")
             exitStatus = 1
             task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             completed = true
             return
         }
         
-        println("Using endpoint: ${endpoint}")
-        println("Executing NIM task: ${serviceName}")
+        def endpoint = executor.nimEndpoints[serviceName]
+        if (!endpoint) {
+            logErr("No endpoint configured for service: ${serviceName}")
+            exitStatus = 1
+            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
+            completed = true
+            return
+        }
+        
+        logOut("Using endpoint: ${endpoint}")
+        logOut("Executing NIM task: ${serviceName}")
 
         try {
             // Build request body based on service type and task parameters
             def requestData = buildRequestData(serviceName as String, pdbData)
             def requestBody = new JsonBuilder(requestData).toString()
-            println("Request body first 500 chars: ${requestBody.take(500)}")
+            logOut("Request body first 500 chars: ${requestBody.take(500)}")
+            logDebug("Full request body: ${requestBody}")
             
             // Use Java HTTP client with proper SSL configuration
             def httpClient = executor.httpClient
@@ -218,28 +352,30 @@ class NIMTaskHandler extends TaskHandler {
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build()
             
-            println("Executing HTTP request to NIM API...")
+            logOut("Executing HTTP request to NIM API...")
             def response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             
             def statusCode = response.statusCode()
             def responseBody = response.body()
             
-            println("HTTP status code: ${statusCode}")
-            println("Response body: ${responseBody}")
+            logOut("HTTP status code: ${statusCode}")
+            logOut("Response body: ${responseBody}")
             
             // Save results to work directory regardless of status for debugging
-            def resultFile = task.workDir.resolve('nim_result.json')
+            def resultFilename = getResultFilename(serviceName as String)
+            def resultFile = task.workDir.resolve(resultFilename)
             resultFile.text = responseBody
+            logOut("Saved API response to: ${resultFilename}")
             
             if (statusCode == 200 || statusCode == 202) {
-                println("NIM task completed successfully")
+                logOut("NIM task completed successfully")
                 
                 // Process the response and create output files
                 try {
                     processApiResponse(serviceName as String, responseBody)
-                    println("Output files created successfully")
+                    logOut("Output files created successfully")
                 } catch (Exception e) {
-                    println("Error processing API response: ${e.message}")
+                    logErr("Error processing API response: ${e.message}")
                     // Continue as success since API call worked, just output processing failed
                 }
                 
@@ -252,7 +388,7 @@ class NIMTaskHandler extends TaskHandler {
                 
                 completed = true
             } else if (statusCode == 422) {
-                println("NIM API validation error (422): ${responseBody}")
+                logOut("NIM API validation error (422): ${responseBody}")
                 // For integration tests, we'll treat validation errors as "completed" 
                 // since they indicate the API is working but data is invalid
                 exitStatus = 0  // Consider this success for testing purposes
@@ -260,8 +396,8 @@ class NIMTaskHandler extends TaskHandler {
                 createNextflowFiles("NIM API validation error (422) - treated as success for testing")
                 completed = true
             } else {
-                println("NIM API request failed with status: ${statusCode}")
-                println("Response: ${responseBody}")
+                logErr("NIM API request failed with status: ${statusCode}")
+                logErr("Response: ${responseBody}")
                 exitStatus = 1
                 task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
                 createNextflowFiles("NIM API request failed with status: ${statusCode}")
@@ -269,8 +405,8 @@ class NIMTaskHandler extends TaskHandler {
             }
 
         } catch (Exception e) {
-            println("Error executing NIM request: ${e.message}")
-            e.printStackTrace()  // More detailed error info
+            logErr("Error executing NIM request: ${e.message}")
+            logDebug("Stack trace: ${e.getStackTrace().join('\n')}")
             exitStatus = 1
             task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             createNextflowFiles("Error executing NIM request: ${e.message}")
@@ -283,21 +419,23 @@ class NIMTaskHandler extends TaskHandler {
      * Note: This method should not be used in new code - use setPdbData() instead
      */
     private void executeNIMTask() {
-        // Check for API key first to fail fast
-        def apiKey = System.getenv('NVCF_RUN_KEY')
+        // Get service name from task.ext.nim or default to 'rfdiffusion' for legacy compatibility
+        String serviceName = getTaskExtValue('nim', 'rfdiffusion') as String
+        logDebug("Starting legacy NIM task execution with service: ${serviceName}")
+        
+        // Check for API key using the executor's API key resolution
+        def apiKey = executor.getApiKey(serviceName)
         if (!apiKey) {
-            println("No API key found. Set NVCF_RUN_KEY environment variable.")
+            logErr("No API key found for service '${serviceName}'. Configure nim.apiKey or nim.${serviceName}.apiKey, or set NVCF_RUN_KEY environment variable.")
             exitStatus = 1
             task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             completed = true
             return
         }
-
-        // Get service name from task.ext.nim or default to 'rfdiffusion' for legacy compatibility
-        def serviceName = getTaskExtValue('nim', 'rfdiffusion')
+        
         def endpoint = executor.nimEndpoints[serviceName]
         if (!endpoint) {
-            println("No endpoint configured for service: ${serviceName}")
+            logErr("No endpoint configured for service: ${serviceName}")
             exitStatus = 1
             task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             completed = true
@@ -307,7 +445,7 @@ class NIMTaskHandler extends TaskHandler {
         // For backwards compatibility, we'll use a simple inline PDB download
         // In practice, callers should use setPdbData() with pre-downloaded data
         try {
-            println("Downloading PDB file from RCSB for service: ${serviceName}...")
+            logOut("Downloading PDB file from RCSB for service: ${serviceName}...")
             def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
             
             // Use the exact same command as the working script
@@ -320,11 +458,12 @@ class NIMTaskHandler extends TaskHandler {
                 throw new RuntimeException("Failed to download PDB file")
             }
             
+            logOut("PDB download completed, processing data...")
             // Convert literal \n characters to actual newlines for JSON
             def processedPdbData = pdbData.replace('\\n', '\n')
             executeNIMTaskWithPdb(processedPdbData)
         } catch (Exception e) {
-            println("Error downloading PDB file: ${e.message}")
+            logErr("Error downloading PDB file: ${e.message}")
             exitStatus = 1
             task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
             createNextflowFiles("Error downloading PDB file: ${e.message}")
@@ -342,25 +481,25 @@ class NIMTaskHandler extends TaskHandler {
             def jsonSlurper = new JsonSlurper()
             def responseData = jsonSlurper.parseText(responseBody) as Map
             
-            println("Processing API response for service: ${serviceName}")
+            logOut("Processing API response for service: ${serviceName}")
             
             switch (serviceName) {
                 case 'rfdiffusion':
-                    processRFDiffusionResponse(responseData)
+                    processRFDiffusionResponse(responseData, serviceName)
                     break
                 case 'alphafold2':
                 case 'openfold':
-                    processProteinFoldingResponse(responseData)
+                    processProteinFoldingResponse(responseData, serviceName)
                     break
                 default:
                     // For unknown services, try to extract common output formats
-                    processGenericResponse(responseData)
+                    processGenericResponse(responseData, serviceName)
                     break
             }
             
         } catch (Exception e) {
-            println("Error parsing API response JSON: ${e.message}")
-            println("Response body: ${responseBody}")
+            logErr("Error parsing API response JSON: ${e.message}")
+            logErr("Response body: ${responseBody}")
             throw e
         }
     }
@@ -369,23 +508,25 @@ class NIMTaskHandler extends TaskHandler {
      * Process RFDiffusion API response
      * @param responseData Parsed JSON response data
      */
-    private void processRFDiffusionResponse(Map<String, Object> responseData) {
+    private void processRFDiffusionResponse(Map<String, Object> responseData, String serviceName) {
+        def outputFilename = getMainOutputFilename(serviceName)
+        
         if (responseData.containsKey('output_pdb')) {
             def outputPdb = responseData.output_pdb as String
-            def outputFile = task.workDir.resolve('output.pdb')
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = outputPdb
-            println("Created RFDiffusion output file: ${outputFile}")
-            println("Output PDB size: ${outputPdb.length()} characters")
+            logOut("Created RFDiffusion output file: ${outputFilename}")
+            logOut("Output PDB size: ${outputPdb.length()} characters")
         } else if (responseData.containsKey('error')) {
-            println("RFDiffusion API returned error: ${responseData.error}")
+            logOut("RFDiffusion API returned error: ${responseData.error}")
             // Still create an empty output file so the process doesn't fail
-            def outputFile = task.workDir.resolve('output.pdb')
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = "# RFDiffusion API Error: ${responseData.error}\n"
         } else {
-            println("Warning: RFDiffusion response does not contain expected 'output_pdb' field")
-            println("Available fields: ${responseData.keySet()}")
+            logOut("Warning: RFDiffusion response does not contain expected 'output_pdb' field")
+            logOut("Available fields: ${responseData.keySet()}")
             // Create a placeholder output file
-            def outputFile = task.workDir.resolve('output.pdb')
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = "# RFDiffusion response did not contain output_pdb field\n"
         }
     }
@@ -393,8 +534,9 @@ class NIMTaskHandler extends TaskHandler {
     /**
      * Process AlphaFold2/OpenFold API response
      * @param responseData Parsed JSON response data
+     * @param serviceName The service name for dynamic filename resolution
      */
-    private void processProteinFoldingResponse(Map<String, Object> responseData) {
+    private void processProteinFoldingResponse(Map<String, Object> responseData, String serviceName) {
         // Look for common protein structure output fields
         def outputPdb = null
         
@@ -408,19 +550,21 @@ class NIMTaskHandler extends TaskHandler {
             outputPdb = responseData.predicted_structure as String
         }
         
+        def outputFilename = getMainOutputFilename(serviceName)
+        
         if (outputPdb) {
-            def outputFile = task.workDir.resolve('output.pdb')
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = outputPdb
-            println("Created protein folding output file: ${outputFile}")
-            println("Output PDB size: ${outputPdb.length()} characters")
+            logOut("Created protein folding output file: ${outputFilename}")
+            logOut("Output PDB size: ${outputPdb.length()} characters")
         } else if (responseData.containsKey('error')) {
-            println("Protein folding API returned error: ${responseData.error}")
-            def outputFile = task.workDir.resolve('output.pdb')
+            logOut("Protein folding API returned error: ${responseData.error}")
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = "# Protein Folding API Error: ${responseData.error}\n"
         } else {
-            println("Warning: Protein folding response does not contain expected structure field")
-            println("Available fields: ${responseData.keySet()}")
-            def outputFile = task.workDir.resolve('output.pdb')
+            logOut("Warning: Protein folding response does not contain expected structure field")
+            logOut("Available fields: ${responseData.keySet()}")
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = "# Protein folding response did not contain expected structure field\n"
         }
     }
@@ -428,8 +572,9 @@ class NIMTaskHandler extends TaskHandler {
     /**
      * Process generic API response for unknown services
      * @param responseData Parsed JSON response data
+     * @param serviceName The service name for dynamic filename resolution
      */
-    private void processGenericResponse(Map<String, Object> responseData) {
+    private void processGenericResponse(Map<String, Object> responseData, String serviceName) {
         // Try common output field names
         def outputData = null
         def outputField = null
@@ -446,22 +591,25 @@ class NIMTaskHandler extends TaskHandler {
             }
         }
         
+        def outputFilename = getMainOutputFilename(serviceName)
+        
         if (outputData) {
-            def outputFile = task.workDir.resolve('output.pdb')
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = outputData as String
-            println("Created generic output file from field '${outputField}': ${outputFile}")
-            println("Output size: ${(outputData as String).length()} characters")
+            logOut("Created generic output file from field '${outputField}': ${outputFilename}")
+            logOut("Output size: ${(outputData as String).length()} characters")
         } else if (responseData.containsKey('error')) {
-            println("Generic API returned error: ${responseData.error}")
-            def outputFile = task.workDir.resolve('output.pdb')
+            logOut("Generic API returned error: ${responseData.error}")
+            def outputFile = task.workDir.resolve(outputFilename)
             outputFile.text = "# API Error: ${responseData.error}\n"
         } else {
-            println("Warning: Generic response does not contain recognized output fields")
-            println("Available fields: ${responseData.keySet()}")
-            // Create output file with the entire response as JSON for debugging
-            def outputFile = task.workDir.resolve('output.json')
+            logOut("Warning: Generic response does not contain recognized output fields")
+            logOut("Available fields: ${responseData.keySet()}")
+            // Create output file with the entire response as JSON for debugging  
+            def debugFilename = getOutputFilename('debugFile', 'output.json', serviceName)
+            def outputFile = task.workDir.resolve(debugFilename)
             outputFile.text = new JsonBuilder(responseData).toPrettyString()
-            println("Created debug output file: ${outputFile}")
+            logOut("Created debug output file: ${debugFilename}")
         }
     }
     
@@ -475,21 +623,15 @@ class NIMTaskHandler extends TaskHandler {
             def commandScript = task.workDir.resolve('.command.sh')
             commandScript.text = task.script ?: "# NIM API executor - no shell script execution"
             
-            // Create .command.log (execution log)
-            def commandLog = task.workDir.resolve('.command.log')
-            commandLog.text = "${logMessage}\nNIM executor completed API call successfully"
-            
-            // Create .command.err (error log - empty for successful runs)
-            def commandErr = task.workDir.resolve('.command.err')
-            commandErr.text = ""
+            // Note: .command.out, .command.err, and .command.log are already handled by our logging system
             
             // Create .exitcode file with the exit status
             def exitCodeFile = task.workDir.resolve('.exitcode')
             exitCodeFile.text = "${exitStatus != null ? exitStatus : 0}"
             
-            println("Created Nextflow tracking files in work directory")
+            logDebug("Created Nextflow tracking files in work directory")
         } catch (Exception e) {
-            println("Warning: Could not create Nextflow tracking files: ${e.message}")
+            logErr("Warning: Could not create Nextflow tracking files: ${e.message}")
         }
     }
 }

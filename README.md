@@ -30,12 +30,30 @@ plugins {
 
 ### Authentication
 
-The plugin uses NVIDIA's hosted API endpoints by default. You will need to set up authentication with NVIDIA API keys as described in the [NVIDIA NIM documentation](https://developer.nvidia.com/blog/a-simple-guide-to-deploying-generative-ai-with-nvidia-nim/).
+The plugin supports multiple authentication methods with flexible configuration options:
 
-Set your API key as an environment variable:
+**Method 1: Environment Variable (Traditional)**
 ```bash
 export NVCF_RUN_KEY="your-nvidia-api-key-here"
 ```
+
+**Method 2: Global Configuration**
+```groovy
+nim {
+    apiKey = 'your-api-key-here'
+}
+```
+
+**Method 3: Service-Specific Configuration**
+```groovy
+nim {
+    rfdiffusion {
+        apiKey = 'service-specific-key'
+    }
+}
+```
+
+API keys are resolved in priority order: service-specific → global config → environment variable. See the [Authentication Guide](docs/authentication.md) for detailed setup instructions.
 
 ### Default Endpoints
 
@@ -49,9 +67,12 @@ You can configure custom NIM endpoints in your `nextflow.config`:
 nim {
     rfdiffusion {
         endpoint = 'http://your-nim-server:8080/biology/ipd/rfdiffusion/generate'
+        apiKey = 'custom-endpoint-key'  // Optional: service-specific key
     }
 }
 ```
+
+For complete configuration options, see the [Configuration Guide](docs/configuration.md).
 
 ## Usage
 
@@ -274,6 +295,18 @@ When contributing to the plugin:
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [COPYING](COPYING) file for details.
+
+## Documentation
+
+For detailed information, see the comprehensive documentation in the [`docs/`](docs/) directory:
+
+- **[Installation Guide](docs/installation.md)** - Setup and installation instructions
+- **[Configuration Guide](docs/configuration.md)** - Configuration options and examples  
+- **[Authentication Guide](docs/authentication.md)** - Authentication methods and security
+- **[Usage Guide](docs/usage.md)** - Usage patterns and best practices
+- **[Examples Guide](docs/examples.md)** - Comprehensive workflow examples
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+- **[API Reference](docs/api-reference.md)** - Complete API documentation
 
 ## Contributing
 

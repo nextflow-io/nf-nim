@@ -259,6 +259,174 @@ class NIMTaskHandlerTest extends Specification {
         workDir.toFile().deleteDir()
     }
 
+    def 'should create logging files when initializing handler'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        
+        then:
+        def outFile = workDir.resolve('.command.out')
+        def errFile = workDir.resolve('.command.err')
+        def logFile = workDir.resolve('.command.log')
+        
+        Files.exists(outFile)
+        Files.exists(errFile)
+        Files.exists(logFile)
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should use custom output filename when configured'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        def customOutputFile = 'custom-output.pdb'
+        def customResultFile = 'custom-result.json'
+        
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+            getConfig() >> [
+                ext: [
+                    outputFile: customOutputFile,
+                    resultFile: customResultFile,
+                    nim: 'rfdiffusion'
+                ]
+            ]
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        def mainFilename = handler.getMainOutputFilename('rfdiffusion')
+        def resultFilename = handler.getResultFilename('rfdiffusion')
+        
+        then:
+        mainFilename == customOutputFile
+        resultFilename == customResultFile
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should fallback to default filenames when not configured'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+            getConfig() >> [:]  // No ext configuration
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        def mainFilename = handler.getMainOutputFilename('rfdiffusion')
+        def resultFilename = handler.getResultFilename('rfdiffusion')
+        
+        then:
+        mainFilename == 'output.pdb'
+        resultFilename == 'nim_result.json'
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should support variable substitution in filenames'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskName = 'test-task'
+        def serviceName = 'rfdiffusion'
+        
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+            getName() >> taskName
+            getConfig() >> [
+                ext: [
+                    outputFile: '${task.name}_${serviceName}_output.pdb',
+                    nim: serviceName
+                ]
+            ]
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        def mainFilename = handler.getMainOutputFilename(serviceName)
+        
+        then:
+        mainFilename == "${taskName}_${serviceName}_output.pdb"
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should sanitize invalid characters in filenames'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        def invalidFilename = 'output<>:"|?*.pdb'
+        
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+            getConfig() >> [
+                ext: [
+                    outputFile: invalidFilename,
+                    nim: 'rfdiffusion'
+                ]
+            ]
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        def mainFilename = handler.getMainOutputFilename('rfdiffusion')
+        
+        then:
+        mainFilename == 'output_______.pdb'  // Invalid chars replaced with underscores
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
+    def 'should close log writers when task completes'() {
+        given:
+        def executor = createMockExecutor()
+        def workDir = Files.createTempDirectory('nim-test')
+        def taskRun = Mock(TaskRun) {
+            getWorkDir() >> workDir
+        }
+        
+        when:
+        def handler = new NIMTaskHandler(taskRun, executor)
+        handler.@completed = true
+        handler.@exitStatus = 0
+        handler.task.exitStatus = 0
+        
+        // Simulate task completion
+        def completed = handler.checkIfCompleted()
+        
+        then:
+        completed == true
+        handler.status == TaskStatus.COMPLETED
+        
+        // Writers should be closed, we can't directly test this but files should exist
+        def outFile = workDir.resolve('.command.out')
+        def errFile = workDir.resolve('.command.err')
+        def logFile = workDir.resolve('.command.log')
+        
+        Files.exists(outFile)
+        Files.exists(errFile)
+        Files.exists(logFile)
+        
+        cleanup:
+        workDir.toFile().deleteDir()
+    }
+
     private NIMExecutor createMockExecutor() {
         def session = Mock(Session)
         session.config >> [:]
