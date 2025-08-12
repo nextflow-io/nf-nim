@@ -1,5 +1,5 @@
 plugins {
-    id 'io.nextflow.nextflow-plugin' version '0.0.1-alpha4'
+    id 'io.nextflow.nextflow-plugin' version '0.0.1-alpha3'
 }
 
 version = '0.1.0'
@@ -16,9 +16,13 @@ nextflowPlugin {
     ]
 
     publishing {
-        registry {
-            url = 'https://nf-plugins-registry.dev-tower.net/api'
-            authToken = project.findProperty('pluginRegistry.accessToken')
+        github {
+            repository = 'nextflow-io/nf-nim'
+            userName = project.findProperty('github_username')
+            authToken = project.findProperty('github_access_token')
+            email = project.findProperty('github_commit_email')
+
+            indexUrl = 'https://github.com/nextflow-io/plugins/main/plugins.json'
         }
     }
 }
