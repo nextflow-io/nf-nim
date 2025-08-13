@@ -427,29 +427,12 @@ class NIMTaskHandler extends TaskHandler {
         String serviceName = getTaskExtValue('nim', 'rfdiffusion') as String
         logDebug("Starting legacy NIM task execution with service: ${serviceName}")
         
-        // Check for API key using the executor's API key resolution
-        def apiKey = executor.getApiKey(serviceName)
-        if (!apiKey) {
-            logErr("No API key found for service '${serviceName}'. Configure nim.apiKey or nim.${serviceName}.apiKey, or set NVCF_RUN_KEY environment variable.")
-            exitStatus = 1
-            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
-            completed = true
-            return
-        }
-        
-        def endpoint = executor.nimEndpoints[serviceName]
-        if (!endpoint) {
-            logErr("No endpoint configured for service: ${serviceName}")
-            exitStatus = 1
-            task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
-            completed = true
-            return
-        }
+        // Note: API key and endpoint validation will be done in executeNIMTaskWithPdb()
         
         // For backwards compatibility, we'll use a simple inline PDB download
         // In practice, callers should use setPdbData() with pre-downloaded data
         try {
-            logOut("Downloading PDB file from RCSB for service: ${serviceName}...")
+            logDebug("Downloading PDB file from RCSB for service: ${serviceName}...")
             def pdbUrl = "https://files.rcsb.org/download/1R42.pdb"
             
             // Use the exact same command as the working script
@@ -462,7 +445,7 @@ class NIMTaskHandler extends TaskHandler {
                 throw new RuntimeException("Failed to download PDB file")
             }
             
-            logOut("PDB download completed, processing data...")
+            logDebug("PDB download completed, delegating to executeNIMTaskWithPdb()...")
             // Convert literal \n characters to actual newlines for JSON
             def processedPdbData = pdbData.replace('\\n', '\n')
             executeNIMTaskWithPdb(processedPdbData)
