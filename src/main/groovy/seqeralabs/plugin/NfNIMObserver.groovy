@@ -36,6 +36,6 @@ class NfNIMObserver implements TraceObserver {
 
     @Override
     void onFlowComplete() {
-        println "Pipeline complete! 👋"
+        // Pipeline completion - no message needed
     }
 }
