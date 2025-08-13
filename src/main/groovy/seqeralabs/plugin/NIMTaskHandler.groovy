@@ -71,9 +71,11 @@ class NIMTaskHandler extends TaskHandler {
      * Log a message to stdout and .command.out
      */
     private void logOut(String message) {
-        println(message)
+        def taskId = task.name ?: task.hashLog?.take(8) ?: "unknown"
+        def prefixedMessage = "[NIM:${taskId}] ${message}"
+        println(prefixedMessage)
         if (outWriter) {
-            outWriter.println(message)
+            outWriter.println(message)  // File logs don't need prefix
             outWriter.flush()
         }
         if (logWriter) {
@@ -86,9 +88,11 @@ class NIMTaskHandler extends TaskHandler {
      * Log a message to stderr and .command.err
      */
     private void logErr(String message) {
-        System.err.println(message)
+        def taskId = task.name ?: task.hashLog?.take(8) ?: "unknown"
+        def prefixedMessage = "[NIM:${taskId}] ERROR: ${message}"
+        System.err.println(prefixedMessage)
         if (errWriter) {
-            errWriter.println(message)
+            errWriter.println(message)  // File logs don't need prefix
             errWriter.flush()
         }
         if (logWriter) {
@@ -249,7 +253,7 @@ class NIMTaskHandler extends TaskHandler {
                     executeNIMTask()
                 }
             } catch (Exception e) {
-                println("Error executing NIM task: ${e.message}")
+                logErr("Error executing NIM task: ${e.message}")
                 exitStatus = 1
                 task.exitStatus = 1  // Critical: Set the task's exit status for TaskPollingMonitor
                 completed = true
