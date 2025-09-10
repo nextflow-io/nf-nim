@@ -1,11 +1,11 @@
 plugins {
-    id 'io.nextflow.nextflow-plugin' version '0.0.1-alpha3'
+    id 'io.nextflow.nextflow-plugin' version '1.0.0-beta.9'
 }
 
-version = '0.1.0'
+version = '0.2.0'
 
 nextflowPlugin {
-    nextflowVersion = '24.10.0'
+    nextflowVersion = '25.04.0'
 
     provider = 'seqeralabs'
     className = 'seqeralabs.plugin.NfNIMPlugin'
@@ -15,14 +15,8 @@ nextflowPlugin {
         'seqeralabs.plugin.NIMExecutor'
     ]
 
-    publishing {
-        github {
-            repository = 'nextflow-io/nf-nim'
-            userName = project.findProperty('github_username')
-            authToken = project.findProperty('github_access_token')
-            email = project.findProperty('github_commit_email')
-
-            indexUrl = 'https://github.com/nextflow-io/plugins/main/plugins.json'
-        }
+    registry {
+        url = 'https://registry.nextflow.io/api'
+        apiKey = project.findProperty('npr_api_key') ?: System.getenv('NPR_API_KEY')
     }
 }
