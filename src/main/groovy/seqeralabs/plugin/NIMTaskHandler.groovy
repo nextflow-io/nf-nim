@@ -302,6 +302,13 @@ class NIMTaskHandler extends TaskHandler {
         closeLogWriters()
     }
 
+    @Override
+    void killTask() {
+        // For HTTP API-based tasks, killTask() should do the same as kill()
+        // since there's no long-running process to terminate - just mark as killed
+        kill()
+    }
+
     Integer getExitStatus() {
         return exitStatus
     }
