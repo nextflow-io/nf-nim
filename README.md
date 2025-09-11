@@ -2,6 +2,23 @@
 
 A Nextflow plugin for integrating [NVIDIA NIMs (NVIDIA Inference Microservices)](https://developer.nvidia.com/nim) as custom executors for bioinformatics workflows.
 
+``` mmd
+---
+config:
+  layout: dagre
+  look: neo
+  theme: mc
+---
+flowchart TB
+    A["NIM Service Running<br>health.api.nvidia.com or localhost:8080"] -- Ready --> B["Nextflow: nim executor<br>Prepares PDB data and parameters"]
+    B -- POST /generate<br>input_pdb, contigs, hotspot_res --> C["RFDiffusion NIM<br>Generates protein structure"]
+    C -- JSON with coordinates --> D["Process writes output.pdb<br>Returns to Nextflow workflow"]
+    style A fill:#76b900,color:#fff
+    style B fill:#667eea,color:#fff
+    style C fill:#2196F3,color:#fff
+    style D fill:#4CAF50,color:#fff
+```
+
 ## Overview
 
 This plugin provides a generic `nim` executor that can run NVIDIA NIM services for biological computing, specifically:
