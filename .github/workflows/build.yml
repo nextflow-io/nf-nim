@@ -36,8 +36,8 @@ jobs:
     - name: Build the plugin
       run: ./gradlew assemble
 
-    - name: Run unit tests
-      run: ./gradlew test --exclude-task NIMIntegrationTest
+    - name: Run tests
+      run: ./gradlew test
       
     - name: Upload test results
       uses: actions/upload-artifact@v4
