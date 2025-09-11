@@ -18,19 +18,18 @@ package seqeralabs.plugin
 
 import groovy.transform.CompileStatic
 import nextflow.Session
-import nextflow.trace.TraceObserver
-import nextflow.trace.TraceObserverFactory
-
+import nextflow.trace.TraceObserverFactoryV2
+import nextflow.trace.TraceObserverV2
 /**
  * Implements a factory object required to create
  * the {@link NfNIMObserver} instance.
  */
 @CompileStatic
-class NfNIMFactory implements TraceObserverFactory {
+class NfNIMFactory implements TraceObserverFactoryV2 {
 
     @Override
-    Collection<TraceObserver> create(Session session) {
-        return List.<TraceObserver>of(new NfNIMObserver())
+    Collection<TraceObserverV2> create(Session session) {
+        return List.<TraceObserverV2>of(new NfNIMObserver())
     }
 
 }
