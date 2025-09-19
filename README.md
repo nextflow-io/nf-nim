@@ -2,6 +2,23 @@
 
 A Nextflow plugin for integrating [NVIDIA NIMs (NVIDIA Inference Microservices)](https://developer.nvidia.com/nim) as custom executors for bioinformatics workflows.
 
+``` mmd
+---
+config:
+  layout: dagre
+  look: neo
+  theme: mc
+---
+flowchart TB
+    A["NIM Service Running<br>health.api.nvidia.com or localhost:8080"] -- Ready --> B["Nextflow: nim executor<br>Prepares PDB data and parameters"]
+    B -- POST /generate<br>input_pdb, contigs, hotspot_res --> C["RFDiffusion NIM<br>Generates protein structure"]
+    C -- JSON with coordinates --> D["Process writes output.pdb<br>Returns to Nextflow workflow"]
+    style A fill:#76b900,color:#fff
+    style B fill:#667eea,color:#fff
+    style C fill:#2196F3,color:#fff
+    style D fill:#4CAF50,color:#fff
+```
+
 ## Overview
 
 This plugin provides a generic `nim` executor that can run NVIDIA NIM services for biological computing, specifically:
@@ -33,11 +50,13 @@ plugins {
 The plugin supports multiple authentication methods with flexible configuration options:
 
 **Method 1: Environment Variable (Traditional)**
+
 ```bash
 export NVCF_RUN_KEY="your-nvidia-api-key-here"
 ```
 
 **Method 2: Global Configuration**
+
 ```groovy
 nim {
     apiKey = 'your-api-key-here'
@@ -45,6 +64,7 @@ nim {
 ```
 
 **Method 3: Service-Specific Configuration**
+
 ```groovy
 nim {
     rfdiffusion {
@@ -83,16 +103,16 @@ Use the `nim` executor in your processes and specify which NIM service to use wi
 ```groovy
 process myNIMProcess {
     executor 'nim'
-    
+
     input:
     // your inputs
-    
+
     output:
     // your outputs
-    
+
     script:
     task.ext.nim = "rfdiffusion"
-    
+
     """
     # Your script here - the NIM executor handles the actual API calls
     echo "Running ${task.ext.nim} analysis"
@@ -105,16 +125,16 @@ process myNIMProcess {
 ```groovy
 process rfdiffusionDesign {
     executor 'nim'
-    
+
     input:
     path pdb_file
-    
+
     output:
     path "output.pdb"
 
     script:
     task.ext.nim = "rfdiffusion"
-    
+
     """
     echo "Designing protein structure using RFDiffusion"
     """
@@ -125,7 +145,7 @@ Parameters for RFDiffusion can be set in `params`:
 
 ```groovy
 params.contigs = "A20-60/0 50-100"
-params.hotspot_res = ["A50","A51","A52","A53","A54"] 
+params.hotspot_res = ["A50","A51","A52","A53","A54"]
 params.diffusion_steps = 15
 ```
 
@@ -145,10 +165,10 @@ workflow {
 
 process designProtein {
     executor 'nim'
-    
+
     input:
     path pdb_file
-    
+
     output:
     path "designed.pdb"
 
@@ -163,10 +183,11 @@ process designProtein {
 ## Input Requirements
 
 ### RFDiffusion
+
 - **Input**: PDB file containing protein structure
-- **Parameters**: 
+- **Parameters**:
   - `params.contigs` - Contigs specification (default: "A20-60/0 50-100")
-  - `params.hotspot_res` - Hotspot residues (default: ["A50","A51","A52","A53","A54"])  
+  - `params.hotspot_res` - Hotspot residues (default: ["A50","A51","A52","A53","A54"])
   - `params.diffusion_steps` - Number of diffusion steps (default: 15)
 
 ## Health Checks
@@ -240,6 +261,7 @@ The test suite follows a 3-step integration testing pattern:
 3. **Verify API completion** - Check response and result files
 
 This separation allows for:
+
 - **Unit testing** - Mock components independently
 - **Integration testing** - Test with real API endpoints
 - **Isolated testing** - Test individual components without external dependencies
@@ -301,7 +323,7 @@ This project is licensed under the Apache License 2.0 - see the [COPYING](COPYIN
 For detailed information, see the comprehensive documentation in the [`docs/`](docs/) directory:
 
 - **[Installation Guide](docs/installation.md)** - Setup and installation instructions
-- **[Configuration Guide](docs/configuration.md)** - Configuration options and examples  
+- **[Configuration Guide](docs/configuration.md)** - Configuration options and examples
 - **[Authentication Guide](docs/authentication.md)** - Authentication methods and security
 - **[Usage Guide](docs/usage.md)** - Usage patterns and best practices
 - **[Examples Guide](docs/examples.md)** - Comprehensive workflow examples
