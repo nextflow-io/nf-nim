@@ -18,24 +18,13 @@ package seqeralabs.plugin
 
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
-import nextflow.Session
-import nextflow.trace.TraceObserver
-
+import nextflow.trace.TraceObserverV2
 /**
  * Implements an observer that allows implementing custom
  * logic on nextflow execution events.
  */
 @Slf4j
 @CompileStatic
-class NfNIMObserver implements TraceObserver {
+class NfNIMObserver implements TraceObserverV2 {
 
-    @Override
-    void onFlowCreate(Session session) {
-        println "Pipeline is starting! 🚀"
-    }
-
-    @Override
-    void onFlowComplete() {
-        // Pipeline completion - no message needed
-    }
 }
