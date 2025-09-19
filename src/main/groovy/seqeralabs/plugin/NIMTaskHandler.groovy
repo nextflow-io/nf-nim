@@ -148,7 +148,7 @@ class NIMTaskHandler extends TaskHandler {
     }
     
     /**
-     * Get the main output filename (typically PDB file)
+     * Get the main output filename (PDB for structures, FASTA for sequences, etc.)
      * @param serviceName The NIM service name
      * @return The resolved output filename
      */
@@ -159,7 +159,15 @@ class NIMTaskHandler extends TaskHandler {
             filename = getTaskExtValue('pdbFile', null)
         }
         if (!filename) {
-            filename = 'output.pdb' // Default
+            // Use service-specific default extensions
+            switch (serviceName) {
+                case 'proteinmpnn':
+                    filename = 'output.fasta'
+                    break
+                default:
+                    filename = 'output.pdb' // Default for structure-generating services
+                    break
+            }
         }
         return getOutputFilename('outputFile', filename as String, serviceName)
     }
@@ -485,6 +493,9 @@ class NIMTaskHandler extends TaskHandler {
                 case 'openfold':
                     processProteinFoldingResponse(responseData, serviceName)
                     break
+                case 'proteinmpnn':
+                    processProteinMPNNResponse(responseData, serviceName)
+                    break
                 default:
                     // For unknown services, try to extract common output formats
                     processGenericResponse(responseData, serviceName)
@@ -562,7 +573,49 @@ class NIMTaskHandler extends TaskHandler {
             outputFile.text = "# Protein folding response did not contain expected structure field\n"
         }
     }
-    
+
+    /**
+     * Process ProteinMPNN API response
+     * @param responseData Parsed JSON response data
+     * @param serviceName The service name for dynamic filename resolution
+     */
+    private void processProteinMPNNResponse(Map<String, Object> responseData, String serviceName) {
+        def outputFilename = getMainOutputFilename(serviceName)
+
+        if (responseData.containsKey('mfasta')) {
+            def mfastaContent = responseData.mfasta as String
+            def outputFile = task.workDir.resolve(outputFilename)
+            outputFile.text = mfastaContent
+            logOut("Created ProteinMPNN FASTA output file: ${outputFilename}")
+            logOut("Output FASTA size: ${mfastaContent.length()} characters")
+
+            // Also save additional data fields if they exist
+            if (responseData.containsKey('scores')) {
+                def scoresFilename = getOutputFilename('scoresFile', "${task.name}_${serviceName}_scores.json", serviceName)
+                def scoresFile = task.workDir.resolve(scoresFilename)
+                scoresFile.text = new JsonBuilder(responseData.scores).toPrettyString()
+                logOut("Created ProteinMPNN scores file: ${scoresFilename}")
+            }
+
+            if (responseData.containsKey('probs')) {
+                def probsFilename = getOutputFilename('probsFile', "${task.name}_${serviceName}_probs.json", serviceName)
+                def probsFile = task.workDir.resolve(probsFilename)
+                probsFile.text = new JsonBuilder(responseData.probs).toPrettyString()
+                logOut("Created ProteinMPNN probabilities file: ${probsFilename}")
+            }
+
+        } else if (responseData.containsKey('error')) {
+            logOut("ProteinMPNN API returned error: ${responseData.error}")
+            def outputFile = task.workDir.resolve(outputFilename)
+            outputFile.text = "# ProteinMPNN API Error: ${responseData.error}\n"
+        } else {
+            logOut("Warning: ProteinMPNN response does not contain expected 'mfasta' field")
+            logOut("Available fields: ${responseData.keySet()}")
+            def outputFile = task.workDir.resolve(outputFilename)
+            outputFile.text = "# ProteinMPNN response did not contain mfasta field\n"
+        }
+    }
+
     /**
      * Process generic API response for unknown services
      * @param responseData Parsed JSON response data
