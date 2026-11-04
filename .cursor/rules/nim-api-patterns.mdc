@@ -1,0 +1,155 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# NVIDIA NIM API Integration Patterns
+
+This rule provides guidance for integrating with NVIDIA Inference Microservices (NIMs) APIs.
+
+## Reference Examples
+
+### Python Client Pattern
+Based on [nim_rfdiffusion_client.py](mdc:examples/nim_rfdiffusion_client.py):
+
+```python
+import requests
+import json
+from pathlib import Path
+
+def nim_request(endpoint, payload):
+    """Standard NIM API request pattern"""
+    response = requests.post(
+        url=f"http://localhost:8000/{endpoint}",
+        json=payload
+    )
+    return response
+
+# Handle PDB files efficiently
+def get_reduced_pdb():
+    pdb = Path("input.pdb")
+    if not pdb.exists():
+        # Download if needed
+        pdb.write_text(requests.get(f"https://files.rcsb.org/download/{pdb}").text)
+    
+    # Filter and limit lines for API efficiency
+    lines = filter(lambda line: line.startswith("ATOM"), pdb.read_text().split("\n"))
+    return "\n".join(list(lines)[:400])
+```
+
+### Shell Script Pattern
+Based on [nim_rfdiffusion_client.sh](mdc:examples/nim_rfdiffusion_client.sh):
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+URL=http://localhost:8000/biology/ipd/rfdiffusion/generate
+
+# Prepare PDB data
+if [ ! -e input.pdb ]; then 
+    curl -O https://files.rcsb.org/download/input.pdb
+fi
+
+pdb=$(cat input.pdb | grep ^ATOM | head -n 400 | awk '{printf "%s\\n", $0}')
+
+# Build JSON request
+request='{
+ "input_pdb": "'"$pdb"'",
+ "contigs": "A20-60/0 50-100",
+ "hotspot_res": ["A50","A51","A52","A53","A54"],
+ "diffusion_steps": 15
+}'
+
+curl -H 'Content-Type: application/json' -d "$request" "$URL"
+```
+
+## Common NIM Endpoints
+
+### Biology/Healthcare NIMs
+- **RFDiffusion**: `biology/ipd/rfdiffusion/generate`
+- **AlphaFold2**: `biology/deepmind/alphafold2/infer`
+- **ESMFold**: `biology/meta/esmfold/infer`
+- **ProteinMPNN**: `biology/ipd/proteinmpnn/infer`
+- **DiffDock**: `biology/mit/diffdock/infer`
+
+### Genomics NIMs
+- **DeepVariant**: `genomics/nvidia/deepvariant/infer`
+- **fq2bam**: `genomics/nvidia/fq2bam/infer`
+
+## Request/Response Patterns
+
+### Standard Request Structure
+```json
+{
+  "input_data": "...",
+  "parameters": {
+    "param1": "value1",
+    "param2": "value2"
+  },
+  "options": {
+    "async": false,
+    "timeout": 300
+  }
+}
+```
+
+### Common Parameters
+- **input_pdb**: PDB format protein structure
+- **contigs**: Sequence constraints for generation
+- **hotspot_res**: Residues to preserve/focus on
+- **diffusion_steps**: Number of denoising steps
+- **num_designs**: Number of variants to generate
+
+### Error Handling
+```python
+try:
+    response = requests.post(url, json=payload, timeout=300)
+    response.raise_for_status()
+    result = response.json()
+    
+    if 'error' in result:
+        raise Exception(f"NIM API Error: {result['error']}")
+        
+except requests.exceptions.Timeout:
+    raise Exception("NIM request timed out")
+except requests.exceptions.ConnectionError:
+    raise Exception("Failed to connect to NIM service")
+```
+
+## File Handling Best Practices
+
+### PDB Files
+- Filter to ATOM records only for efficiency
+- Limit to first 400 lines for large structures
+- Use proper escaping in shell scripts
+- Validate structure before sending
+
+### Output Processing
+```python
+# Standard output handling
+result = response.json()
+if 'output_pdb' in result:
+    Path("output.pdb").write_text(result['output_pdb'])
+    
+if 'metrics' in result:
+    print(f"Confidence: {result['metrics']['confidence']}")
+```
+
+## Authentication & Security
+- Use environment variables for API keys
+- Implement proper token refresh logic
+- Never hardcode credentials in source code
+- Use HTTPS in production environments
+
+## Performance Optimization
+- Reuse HTTP connections when possible
+- Implement request batching for multiple inputs
+- Use async/await for concurrent requests
+- Cache intermediate results appropriately
+
+## Testing NIM Integration
+- Mock NIM responses for unit tests
+- Use test fixtures for sample PDB data
+- Implement integration tests with actual NIM services
+- Test timeout and error scenarios
